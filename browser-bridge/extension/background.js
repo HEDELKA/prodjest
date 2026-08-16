@@ -163,8 +163,55 @@ const PAGE_SNAPSHOT_JS = `
 })();
 `;
 
-// Группы вкладок агента: windowId -> groupId («DSH-агент»).
-let agentGroups = new Map();
+// Группы вкладок агента: одна группа «DSH-агент» на окно.
+// Существующую группу ищем динамически (а не по памяти) — так она переживает
+// перезагрузки расширения, и дубликаты не плодятся.
+
+// Объединяет дубликаты групп «DSH-агент» в окне (если они накопились).
+async function consolidateAgentGroups() {
+  try {
+    const groups = await chrome.tabGroups.query({});
+    const byWindow = new Map();
+    for (const g of groups) {
+      if (g.title !== "DSH-агент") continue;
+      if (!byWindow.has(g.windowId)) byWindow.set(g.windowId, []);
+      byWindow.get(g.windowId).push(g);
+    }
+    for (const [windowId, list] of byWindow) {
+      if (list.length < 2) continue;
+      const keep = list[0];
+      for (const extra of list.slice(1)) {
+        const tabs = await chrome.tabs.query({ groupId: extra.id });
+        if (tabs.length) {
+          await chrome.tabs.group({ tabIds: tabs.map((t) => t.id), groupId: keep.id });
+        }
+        await chrome.tabGroups.remove(extra.id).catch(() => { /* ignore */ });
+      }
+      log("consolidated agent groups in window", windowId, "->", keep.id);
+    }
+  } catch (e) {
+    log("consolidate failed:", String(e && e.message || e));
+  }
+}
+
+// Помещает вкладку в группу «DSH-агент» окна; создаёт группу, если её нет.
+async function ensureAgentGroup(tabId, windowId) {
+  try {
+    const groups = await chrome.tabGroups.query({ windowId });
+    const mine = groups.find((g) => g.title === "DSH-агент");
+    if (mine) {
+      await chrome.tabs.group({ tabIds: [tabId], groupId: mine.id });
+      return mine.id;
+    }
+    const groupId = await chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId } });
+    await chrome.tabGroups.update(groupId, { title: "DSH-агент", color: "blue" });
+    consolidateAgentGroups(); // fire-and-forget: на всякий случай
+    return groupId;
+  } catch (e) {
+    log("group failed:", String(e && e.message || e));
+    return null;
+  }
+}
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -437,6 +484,7 @@ function connect() {
       connecting = false;
       resetIdle();
       warmUpSessions();
+      consolidateAgentGroups(); // объединяем накопившиеся дубликаты групп
     };
     socket.onmessage = (ev) => {
       let msg;
@@ -532,20 +580,8 @@ async function dispatch(method, params, tabId, cmdId) {
         url: params.url || "chrome://newtab/",
         active,
       });
-      // Вкладка агента попадает в группу «DSH-агент» (как «папка» в панели вкладок).
-      let groupId = null;
-      try {
-        const existing = agentGroups.get(t.windowId);
-        if (existing) {
-          groupId = await chrome.tabs.group({ tabIds: [t.id], groupId: existing }).catch(() => null);
-        } else {
-          groupId = await chrome.tabs.group({ tabIds: [t.id], createProperties: { windowId: t.windowId } });
-          await chrome.tabGroups.update(groupId, { title: "DSH-агент", color: "blue" });
-          agentGroups.set(t.windowId, groupId);
-        }
-      } catch (e) {
-        log("group failed:", String(e && e.message || e));
-      }
+      // Вкладка агента попадает в единую группу «DSH-агент» этого окна.
+      const groupId = await ensureAgentGroup(t.id, t.windowId);
       return { id: t.id, url: t.url, active, groupId };
     }
     case "close_tab": {
@@ -555,12 +591,10 @@ async function dispatch(method, params, tabId, cmdId) {
       overlayTabs.delete(params.tabId);
       updateControlledTabs(params.tabId, false);
       // Если группа агента опустела — удаляем её.
-      const gid = agentGroups.get(t.windowId);
-      if (gid) {
-        const tabs = await chrome.tabs.query({ groupId: gid });
+      if (t.groupId !== -1) {
+        const tabs = await chrome.tabs.query({ groupId: t.groupId });
         if (!tabs.length) {
-          await chrome.tabGroups.remove(gid).catch(() => { /* ignore */ });
-          agentGroups.delete(t.windowId);
+          await chrome.tabGroups.remove(t.groupId).catch(() => { /* ignore */ });
         }
       }
       return { closed: true };
