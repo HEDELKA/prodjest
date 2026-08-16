@@ -191,18 +191,7 @@ body {
   color: #c7d4ec;
   outline: none;
 }
-.settings summary::-webkit-details-marker {
-  display: none;
-}
-.settings summary::before {
-  content: "▸ ";
-  color: var(--sky);
-  display: inline-block;
-  transition: transform 0.2s ease;
-}
-.settings[open] summary::before {
-  transform: rotate(90deg);
-}
+/* Нативный индикатор раскрытия <details> остаётся — декоративный ▸ не нужен. */
 .field {
   display: block;
   font-weight: 600;
