@@ -13,6 +13,10 @@ function log(...args) {
 }
 
 // --- Оверлей для управляемой вкладки -------------------------------------
+// Полноэкранный фиксированный слой (pointer-events:none) с:
+//  - верхним баннером-статусом «DSH-агент работает на этой странице»,
+//  - призрачным курсором (липкий — остаётся в точке последнего действия),
+//  - кольцом-вспышкой и подсветкой элемента при клике.
 const OVERLAY_JS = `
 (() => {
   if (window.__dshOverlay) return;
@@ -20,50 +24,64 @@ const OVERLAY_JS = `
     const root = document.createElement('div');
     root.id = 'dsh-overlay';
     root.setAttribute('data-dsh', '1');
-    root.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none;font-family:ui-monospace,Menlo,Consolas,monospace;';
-    const badge = document.createElement('div');
-    badge.style.cssText = 'position:fixed;top:12px;right:12px;background:rgba(15,23,42,.92);color:#e2e8f0;border:1px solid #38bdf8;border-radius:10px;padding:6px 10px;font-size:12px;line-height:1.3;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;gap:7px;';
+    root.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;';
+
+    const banner = document.createElement('div');
+    banner.id = 'dsh-banner';
+    banner.style.cssText = 'position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:rgba(2,6,23,.94);color:#e2e8f0;border-bottom:2px solid #38bdf8;box-shadow:0 2px 12px rgba(0,0,0,.45);';
     const dot = document.createElement('span');
-    dot.style.cssText = 'width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;animation:dshPulse 1.2s ease-in-out infinite;';
-    const text = document.createElement('span');
-    text.textContent = 'DSH-агент управляет вкладкой';
-    badge.appendChild(dot); badge.appendChild(text);
-    const status = document.createElement('div');
+    dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;animation:dshPulse 1.1s ease-in-out infinite;flex:none;';
+    const title = document.createElement('span');
+    title.textContent = 'DSH-агент работает на этой странице';
+    title.style.cssText = 'font-weight:700;white-space:nowrap;';
+    const status = document.createElement('span');
     status.id = 'dsh-status';
-    status.style.cssText = 'position:fixed;top:44px;right:12px;background:rgba(15,23,42,.85);color:#94a3b8;border-radius:8px;padding:4px 8px;font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity .4s;opacity:0;';
+    status.textContent = 'последнее действие: —';
+    status.style.cssText = 'margin-left:auto;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%;';
+    banner.appendChild(dot); banner.appendChild(title); banner.appendChild(status);
+
     const cursor = document.createElement('div');
     cursor.id = 'dsh-cursor';
-    cursor.style.cssText = 'position:fixed;top:0;left:0;width:26px;height:26px;transform:translate(-9999px,-9999px);';
-    cursor.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))"><path d="M5 2 L19 12 L12 13.5 L8.5 18 Z" fill="#38bdf8" stroke="#0f172a" stroke-width="1.2"/></svg>';
+    cursor.style.cssText = 'position:absolute;top:0;left:0;width:28px;height:28px;transform:translate(-9999px,-9999px);filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));';
+    cursor.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 2 L19 12 L12 13.5 L8.5 18 Z" fill="#38bdf8" stroke="#0f172a" stroke-width="1.3"/></svg>';
     const ring = document.createElement('div');
     ring.id = 'dsh-ring';
-    ring.style.cssText = 'position:fixed;top:0;left:0;width:18px;height:18px;border-radius:50%;border:3px solid #f59e0b;transform:translate(-9999px,-9999px);opacity:0;';
-    root.appendChild(badge); root.appendChild(status); root.appendChild(cursor); root.appendChild(ring);
+    ring.style.cssText = 'position:absolute;top:0;left:0;width:20px;height:20px;border-radius:50%;border:3px solid #f59e0b;transform:translate(-9999px,-9999px);opacity:0;';
+
+    root.appendChild(banner); root.appendChild(cursor); root.appendChild(ring);
     const style = document.createElement('style');
-    style.textContent = '@keyframes dshPulse{0%,100%{opacity:1}50%{opacity:.35}}';
+    style.textContent = '@keyframes dshPulse{0%,100%{opacity:1}50%{opacity:.3}}';
     (document.head || document.documentElement).appendChild(style);
-    (document.head || document.documentElement).appendChild(root);
-    let statusTimer = null;
+    (document.documentElement || document.body).appendChild(root);
+
     window.__dshOverlay = {
-      show() { root.style.display = 'block'; },
+      show() {},
       hide() { root.remove(); style.remove(); window.__dshOverlay = null; },
       status(t) {
         const s = document.getElementById('dsh-status'); if (!s) return;
-        s.textContent = t; s.style.opacity = '1';
-        clearTimeout(statusTimer);
-        statusTimer = setTimeout(() => { s.style.opacity = '0'; }, 2500);
+        s.textContent = 'последнее действие: ' + t;
       },
       cursor(x, y, kind) {
         const c = document.getElementById('dsh-cursor'); if (!c) return;
         c.style.transform = 'translate(' + x + 'px,' + y + 'px)';
         const r = document.getElementById('dsh-ring'); if (!r) return;
         if (kind === 'click') {
-          r.style.transform = 'translate(' + (x - 9) + 'px,' + (y - 9) + 'px)';
+          const el = document.elementFromPoint(x, y);
+          if (el) {
+            const prev = { outline: el.style.outline, outlineOffset: el.style.outlineOffset };
+            el.style.outline = '2px solid #f59e0b';
+            el.style.outlineOffset = '2px';
+            setTimeout(() => {
+              el.style.outline = prev.outline;
+              el.style.outlineOffset = prev.outlineOffset;
+            }, 900);
+          }
+          r.style.transform = 'translate(' + (x - 10) + 'px,' + (y - 10) + 'px)';
           r.style.opacity = '1';
           r.style.transition = 'none';
           requestAnimationFrame(() => {
             r.style.transition = 'transform .45s ease-out, opacity .45s ease-out';
-            r.style.transform = 'translate(' + (x - 24) + 'px,' + (y - 24) + 'px)';
+            r.style.transform = 'translate(' + (x - 28) + 'px,' + (y - 28) + 'px)';
             r.style.opacity = '0';
           });
         }
@@ -75,12 +93,20 @@ const OVERLAY_JS = `
 })();
 `;
 
+// Последняя позиция курсора (чтобы восстановить его после перехода страницы).
+let lastCursor = null;
+
 async function installOverlay(tabId) {
   try {
     await chrome.debugger.sendCommand({ tabId }, "Page.enable");
     await chrome.debugger.sendCommand({ tabId }, "Page.addScriptToEvaluateOnNewDocument", { source: OVERLAY_JS });
     await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: OVERLAY_JS });
     await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: "window.__dshOverlay && window.__dshOverlay.show()" });
+    if (lastCursor) {
+      await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+        expression: "window.__dshOverlay && window.__dshOverlay.cursor(" + lastCursor.x + ", " + lastCursor.y + ", null)",
+      });
+    }
     overlayTabs.add(tabId);
   } catch (e) {
     log("overlay install skipped for tab", tabId, ":", String(e && e.message || e));
@@ -274,8 +300,12 @@ async function dispatch(method, params, tabId) {
       const res = await chrome.debugger.sendCommand({ tabId }, params.method, params.params || {});
       const p = params.params || {};
       if (params.method && params.method.startsWith("Input.") && typeof p.x === "number" && typeof p.y === "number") {
-        const kind = params.method.includes("mousePressed") ? "click" : "move";
-        updateOverlay(tabId, params.method, p.x, p.y, kind);
+        lastCursor = { x: p.x, y: p.y };
+        let label;
+        if (params.method.includes("mousePressed")) label = "клик (" + p.x + ", " + p.y + ")";
+        else if (params.method.includes("mouseMoved")) label = "мышь → (" + p.x + ", " + p.y + ")";
+        else label = params.method;
+        updateOverlay(tabId, label, p.x, p.y, params.method.includes("mousePressed") ? "click" : "move");
       } else if (params.method && params.method.startsWith("Input.")) {
         updateOverlay(tabId, params.method, null, null, null);
       }
