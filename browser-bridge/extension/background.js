@@ -54,9 +54,36 @@ const OVERLAY_JS = `
     (document.head || document.documentElement).appendChild(style);
     (document.documentElement || document.body).appendChild(root);
 
+    // Подпись вкладки: в панели вкладок Chrome сразу видно «🤖 DSH · <заголовок>»,
+    // даже не открывая вкладку. Переживает перезапись title сайтом.
+    const TITLE_PREFIX = '🤖 DSH · ';
+    let originalTitle = document.title;
+    const applyTitle = () => {
+      if (!document.title.startsWith(TITLE_PREFIX)) {
+        originalTitle = document.title;
+        document.title = TITLE_PREFIX + document.title;
+      }
+    };
+    applyTitle();
+    const tObs = new MutationObserver(applyTitle);
+    const bindTitle = () => {
+      const t = document.querySelector('title');
+      tObs.disconnect();
+      if (t) tObs.observe(t, { childList: true, characterData: true, subtree: true });
+    };
+    bindTitle();
+    const headObs = new MutationObserver(() => { bindTitle(); applyTitle(); });
+    const head = document.head || document.documentElement;
+    if (head) headObs.observe(head, { childList: true });
+
     window.__dshOverlay = {
       show() {},
-      hide() { root.remove(); style.remove(); window.__dshOverlay = null; },
+      hide() {
+        root.remove(); style.remove();
+        tObs.disconnect(); headObs.disconnect();
+        try { document.title = originalTitle; } catch { /* ignore */ }
+        window.__dshOverlay = null;
+      },
       status(t) {
         const s = document.getElementById('dsh-status'); if (!s) return;
         s.textContent = 'последнее действие: ' + t;
@@ -95,6 +122,44 @@ const OVERLAY_JS = `
 
 // Последняя позиция курсора (чтобы восстановить его после перехода страницы).
 let lastCursor = null;
+
+// Группы вкладок агента: windowId -> groupId («DSH-агент»).
+let agentGroups = new Map();
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Человекообразная траектория мыши: кривая Безье с «выездом» вверх и джиттером.
+function humanPath(x0, y0, x1, y1, steps) {
+  const pts = [];
+  const cx = (x0 + x1) / 2 + (Math.random() * 80 - 40);
+  const cy = Math.min(y0, y1) - (Math.random() * 70 + 20);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const inv = 1 - t;
+    let x = inv * inv * x0 + 2 * inv * t * cx + t * t * x1;
+    let y = inv * inv * y0 + 2 * inv * t * cy + t * t * y1;
+    x += (Math.random() * 6 - 3) * (0.4 + inv);
+    y += (Math.random() * 6 - 3) * (0.4 + inv);
+    pts.push({ x: Math.round(x), y: Math.round(y) });
+  }
+  return pts;
+}
+
+// Плавное движение мыши из текущей позиции в (x, y) — серия mouseMoved с паузами.
+async function humanMove(tabId, x, y, duration) {
+  const from = lastCursor || { x: x, y: y - 70 };
+  const steps = Math.max(14, Math.min(44, Math.round((duration || 550) / 16)));
+  const pts = humanPath(from.x, from.y, x, y, steps);
+  const stepMs = Math.max(8, (duration || 550) / steps);
+  for (const p of pts) {
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
+    lastCursor = p;
+    updateOverlay(tabId, "мышь → (" + p.x + ", " + p.y + ")", p.x, p.y, "move");
+    await sleep(stepMs + Math.random() * stepMs * 0.6);
+  }
+  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  lastCursor = { x, y };
+}
 
 async function installOverlay(tabId) {
   try {
@@ -265,6 +330,7 @@ async function dispatch(method, params, tabId) {
         url: t.url,
         active: t.active,
         pinned: t.pinned,
+        groupId: t.groupId,
       }));
     }
     case "open_tab": {
@@ -275,12 +341,36 @@ async function dispatch(method, params, tabId) {
         url: params.url || "chrome://newtab/",
         active,
       });
-      return { id: t.id, url: t.url, active };
+      // Вкладка агента попадает в группу «DSH-агент» (как «папка» в панели вкладок).
+      let groupId = null;
+      try {
+        const existing = agentGroups.get(t.windowId);
+        if (existing) {
+          groupId = await chrome.tabs.group({ tabIds: [t.id], groupId: existing }).catch(() => null);
+        } else {
+          groupId = await chrome.tabs.group({ tabIds: [t.id], createProperties: { windowId: t.windowId } });
+          await chrome.tabGroups.update(groupId, { title: "DSH-агент", color: "blue" });
+          agentGroups.set(t.windowId, groupId);
+        }
+      } catch (e) {
+        log("group failed:", String(e && e.message || e));
+      }
+      return { id: t.id, url: t.url, active, groupId };
     }
     case "close_tab": {
+      const t = await chrome.tabs.get(params.tabId);
       await chrome.tabs.remove(params.tabId);
       attachedTabs.delete(params.tabId);
       overlayTabs.delete(params.tabId);
+      // Если группа агента опустела — удаляем её.
+      const gid = agentGroups.get(t.windowId);
+      if (gid) {
+        const tabs = await chrome.tabs.query({ groupId: gid });
+        if (!tabs.length) {
+          await chrome.tabGroups.remove(gid).catch(() => { /* ignore */ });
+          agentGroups.delete(t.windowId);
+        }
+      }
       return { closed: true };
     }
     case "activate_tab": {
@@ -304,6 +394,37 @@ async function dispatch(method, params, tabId) {
         attachedTabs.delete(params.tabId);
       }
       return { detached: true };
+    }
+    case "human_move": {
+      await ensureAttached(tabId);
+      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 550));
+      return { moved: true, to: { x: params.x, y: params.y } };
+    }
+    case "human_click": {
+      await ensureAttached(tabId);
+      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 650));
+      await sleep(70 + Math.random() * 110); // пауза перед нажатием
+      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+        type: "mousePressed", x: params.x, y: params.y, button: "left", clickCount: 1,
+      });
+      lastCursor = { x: params.x, y: params.y };
+      updateOverlay(tabId, "клик (" + params.x + ", " + params.y + ")", params.x, params.y, "click");
+      await sleep(55 + Math.random() * 90);
+      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+        type: "mouseReleased", x: params.x, y: params.y, button: "left", clickCount: 1,
+      });
+      return { clicked: true, at: { x: params.x, y: params.y } };
+    }
+    case "human_type": {
+      await ensureAttached(tabId);
+      const text = String(params.text || "");
+      updateOverlay(tabId, "ввод текста…", null, null, null);
+      for (const ch of text) {
+        await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text: ch });
+        await sleep(45 + Math.random() * 95);
+      }
+      updateOverlay(tabId, "ввод: " + text.slice(0, 24), null, null, null);
+      return { typed: text.length };
     }
     case "cdp": {
       await ensureAttached(tabId);
