@@ -41,15 +41,20 @@ Chrome-расширение + локальный мост, которые поз
 - **Локально и приватно** — мост слушает только `127.0.0.1`, соединение защищено
   случайным токеном; данные не покидают ваш компьютер.
 
-## 🚀 Быстрый старт
+## 🚀 Быстрый старт (без ручного ввода токена)
 
-1. **Сервер**: `node server/index.mjs` — токен появится в `server/token.txt`.
+1. **Сервер**: macOS — двойной клик по `browser-bridge/start.command`;
+   вручную — `node browser-bridge/server/index.mjs`. Сервер слушает только `127.0.0.1`.
 2. **Расширение**: `chrome://extensions` → «Режим разработчика» → «Загрузить распакованное» →
-   выберите папку `extension/`.
-3. **Токен**: иконка расширения → вставьте токен → «Сохранить и переподключить».
-   Статус «подключено к мосту» — всё работает.
+   выберите папку `browser-bridge/extension/`.
+3. **Готово** — расширение **само получит токен** с локального сервера (поле «Токен»
+   можно не трогать). Статус «подключено к мосту» — всё работает.
 4. **Команды**: `./bridge.sh list_tabs`, `./bridge.sh open_tab /tmp/p.json`,
    `./bridge.sh human_click /tmp/xy.json <tabId>` — полный список в `AGENTS.md`.
+
+## 🌐 Сайт проекта
+
+[Лендинг на GitHub Pages](https://hedelka.github.io/prodjest/)
 
 ## 🤖 Для агентов: самообучающаяся машина
 
@@ -69,11 +74,15 @@ Chrome-расширение + локальный мост, которые поз
 - Кнопка «Отключить управление всеми вкладками» в попапе — мгновенная остановка.
 - Политика конфиденциальности: [PRIVACY.md](browser-bridge/PRIVACY.md).
 
-## 📦 Chrome Web Store
+## 📦 Установка без магазина (ZIP)
 
-Пакет для публикации: `dsh-browser-bridge-v0.3.0.zip` в
-[Release v0.3.0](https://github.com/HEDELKA/prodjest/releases/tag/v0.3.0).
-Описание для листинга (EN/RU): `browser-bridge/release/store-description.md`.
+Готовый пакет для ручной установки (manifest.json в корне): **`dsh-browser-bridge-v0.4.0.zip`**
+в [Release v0.4.0](https://github.com/HEDELKA/prodjest/releases).
+На каждом теге `v*` GitHub Action собирает свежий ZIP автоматически.
+
+## 🤝 Участие
+
+Звёзды, issues, PR — приветствуются! См. [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 📄 Лицензия
 

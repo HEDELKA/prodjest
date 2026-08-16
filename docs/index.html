@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="DSH Browser Bridge — Chrome-расширение, которое даёт ИИ-агенту руки в вашем реальном браузере. Плавные человеческие действия, полная видимость, самоулучшение." />
+<title>DSH Browser Bridge — руки вашего агента в Chrome</title>
+<style>
+  :root {
+    --bg: #0b1222; --bg2: #101b33; --card: #141f3a; --border: #233356;
+    --text: #e6edf7; --muted: #8496b8; --sky: #38bdf8; --green: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(120% 80% at 100% 0%, rgba(56,189,248,.14) 0%, transparent 55%),
+                linear-gradient(180deg, var(--bg), var(--bg2));
+    color: var(--text); min-height: 100vh;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 60px; }
+  .hero { text-align: center; padding: 30px 0 10px; }
+  .logo { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 10px 40px rgba(56,189,248,.35); }
+  h1 { font-size: 40px; margin: 18px 0 8px; letter-spacing: .3px;
+       background: linear-gradient(90deg,#fff,#7dd3fc); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .tag { color: var(--muted); font-size: 17px; max-width: 640px; margin: 0 auto 22px; line-height: 1.5; }
+  .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 26px; }
+  .badges img { border-radius: 6px; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 12px; text-decoration: none;
+         font-weight: 700; font-size: 14.5px; transition: all .15s ease; }
+  .btn.primary { background: linear-gradient(90deg,#0ea5e9,#38bdf8); color: #052033; box-shadow: 0 6px 20px rgba(56,189,248,.3); }
+  .btn.primary:hover { transform: translateY(-2px); }
+  .btn.ghost { border: 1px solid var(--border); color: var(--text); background: rgba(20,31,58,.6); }
+  .btn.ghost:hover { border-color: var(--sky); }
+  .shot { margin: 44px 0 8px; border-radius: 16px; border: 1px solid var(--border);
+          box-shadow: 0 20px 60px rgba(0,0,0,.5); width: 100%; }
+  h2 { font-size: 26px; margin: 48px 0 6px; }
+  .sub { color: var(--muted); margin-bottom: 22px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .card h3 { font-size: 15.5px; margin-bottom: 7px; color: #7dd3fc; }
+  .card p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .steps { counter-reset: s; display: grid; gap: 12px; }
+  .step { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--border);
+          border-radius: 14px; padding: 16px 18px; align-items: flex-start; }
+  .step::before { counter-increment: s; content: counter(s);
+    flex: none; width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg,#0ea5e9,#38bdf8); color: #052033;
+    display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .step b { display: block; margin-bottom: 3px; }
+  .step code { background: #0b1222; border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+  .step span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  code.kbd { background: #0b1222; border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; font-size: 12.5px; }
+  .note { margin-top: 14px; color: var(--muted); font-size: 12.5px; }
+  footer { text-align: center; color: var(--muted); margin-top: 60px; font-size: 12px; }
+  footer a { color: #7dd3fc; text-decoration: none; }
+  @media (max-width: 640px) { h1 { font-size: 30px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <img class="logo" src="social-preview.png" alt="DSH Browser Bridge" onerror="this.src='../docs/social-preview.png'" />
+    <h1>DSH Browser Bridge</h1>
+    <p class="tag">Chrome-расширение, которое даёт ИИ-агенту <b>руки в вашем настоящем браузере</b> — с плавными человеческими действиями, полной видимостью и способностью агента улучшать сам себя.</p>
+    <div class="badges">
+      <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT" />
+      <img src="https://img.shields.io/github/v/release/HEDELKA/prodjest" alt="release" />
+      <img src="https://img.shields.io/github/stars/HEDELKA/prodjest?style=social" alt="stars" />
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/HEDELKA/prodjest">GitHub</a>
+      <a class="btn primary" href="https://github.com/HEDELKA/prodjest/blob/main/AGENTS.md">🤖 Инструкция для агентов</a>
+      <a class="btn ghost" href="https://github.com/HEDELKA/prodjest/releases">Релизы (ZIP)</a>
+    </div>
+  </section>
+
+  <img class="shot" src="https://raw.githubusercontent.com/HEDELKA/prodjest/main/browser-bridge/release/screenshots/01-banner-cursor-store.png" alt="Агент управляет страницей: баннер и курсор" />
+
+  <h2>Возможности</h2>
+  <p class="sub">Всё, что нужно агенту для работы в реальном браузере.</p>
+  <div class="grid">
+    <div class="card"><h3>🖱 Человеческие действия</h3><p>Плавные траектории мыши по кривой Безье с естественными паузами — <code>human_click</code>, <code>human_move</code>, <code>human_type</code>. Меньше шансов срабатывания антибот-защиты.</p></div>
+    <div class="card"><h3>👁 Всё видно</h3><p>Баннер «агент работает на этой странице», призрачный курсор, кольцо и подсветка элемента при клике. Вкладки — в группе «DSH-агент» с подписью <code>🤖 DSH · …</code>.</p></div>
+    <div class="card"><h3>⚡ Экономия</h3><p><code>page_snapshot</code> отдаёт карту всех кнопок/полей/ссылок одним вызовом. Агент читает DOM, а не скриншоты.</p></div>
+    <div class="card"><h3>🔁 Самоулучшение</h3><p>Агент меняет код расширения и применяет его через <code>reload_extension</code> — замкнутый цикл без человека.</p></div>
+    <div class="card"><h3>🕶 Фоновый режим</h3><p>Вкладки агента открываются неактивными — ваш фокус никто не перехватывает.</p></div>
+    <div class="card"><h3>🔒 Локально и приватно</h3><p>Мост слушает только <code>127.0.0.1</code>, защищён токеном. Данные не покидают ваш компьютер.</p></div>
+  </div>
+
+  <h2>Быстрый старт</h2>
+  <p class="sub">Три шага — и агент управляет вашим Chrome. <b>Вводить токен вручную не нужно:</b> расширение само получит его с локального сервера.</p>
+  <div class="steps">
+    <div class="step"><span><b>Запустите сервер</b>
+      macOS: двойной клик по <code>start.command</code> (или <code>node server/index.mjs</code>).
+      Сервер слушает только <code>127.0.0.1</code>.</span></div>
+    <div class="step"><span><b>Загрузите расширение</b>
+      <code class="kbd">chrome://extensions</code> → «Режим разработчика» → «Загрузить распакованное» → папка <code>extension/</code>.</span></div>
+    <div class="step"><span><b>Готово</b>
+      Расширение само подключится к серверу и получит токен. Откройте попап — статус «подключено к мосту».
+      Теперь агент может выполнять команды: <code>./bridge.sh list_tabs</code>, <code>human_click</code>, <code>page_snapshot</code>…</span></div>
+  </div>
+  <p class="note">Полный список команд и паттерн «добавь свою команду» — в <a href="https://github.com/HEDELKA/prodjest/blob/main/AGENTS.md" style="color:#7dd3fc">AGENTS.md</a>.</p>
+
+  <h2>Почему это важно</h2>
+  <div class="card">
+    <p>DeepSeek Harness позиционируется как самообучающаяся машина. Это расширение — её «руки»: агент не только управляет браузером, но и <b>улучшает код собственного управления</b>, применяя изменения мгновенно и проверяя их сам. Никакого Playwright, MCP или отдельного браузера — только ваш реальный Chrome.</p>
+  </div>
+
+  <footer>
+    MIT · <a href="https://github.com/HEDELKA/prodjest">github.com/HEDELKA/prodjest</a> ·
+    <a href="https://github.com/HEDELKA/prodjest/blob/main/browser-bridge/PRIVACY.md">Приватность</a>
+  </footer>
+</div>
+</body>
+</html>

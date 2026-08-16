@@ -100,6 +100,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Авто-подключение расширения: сервер отдаёт токен локальному расширению,
+  // чтобы пользователю не пришлось вставлять его вручную. Эндпоинт слушает
+  // только 127.0.0.1; доступен лишь процессам на этой машине.
+  if (req.method === "GET" && url.pathname === "/api/token") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(TOKEN);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/command") {
     let body = "";
     for await (const chunk of req) body += chunk;

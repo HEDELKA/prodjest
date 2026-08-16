@@ -6,31 +6,61 @@
   <title>DSH Browser Bridge</title>
 </head>
 <body>
-  <h1>DSH Browser Bridge</h1>
-  <div id="status" class="status offline">не подключено</div>
+  <header class="hero">
+    <img class="logo" src="icons/icon128.png" alt="DSH" width="38" height="38" />
+    <div class="hero-text">
+      <h1>DSH Browser Bridge</h1>
+      <span class="ver">v0.4.0</span>
+    </div>
+  </header>
 
-  <label>
-    Сервер
-    <input id="serverUrl" placeholder="ws://127.0.0.1:8787/ws" spellcheck="false" />
-  </label>
-  <label>
-    Токен
-    <input id="token" placeholder="токен из server/token.txt" spellcheck="false" />
-  </label>
-  <label class="row">
-    <input type="checkbox" id="armed" />
-    Управление браузером включено
-  </label>
-  <label class="row">
-    <input type="checkbox" id="bgMode" checked />
-    Фоновый режим: не перехватывать фокус
-  </label>
+  <section class="status-card offline" id="statusCard">
+    <div class="status-dot" id="statusDot"></div>
+    <div class="status-body">
+      <div class="status-title" id="status">не подключено</div>
+      <div class="status-sub" id="statusSub">запустите сервер — токен подтянется сам</div>
+    </div>
+  </section>
 
-  <button id="save">Сохранить и переподключить</button>
-  <button id="detachAll" class="danger">Отключить управление всеми вкладками</button>
-  <div id="msg"></div>
+  <section class="toggles">
+    <label class="switch-row">
+      <span class="switch-label">Управление браузером</span>
+      <span class="switch">
+        <input type="checkbox" id="armed" checked />
+        <span class="slider"></span>
+      </span>
+    </label>
+    <label class="switch-row">
+      <span class="switch-label">Фоновый режим<small>вкладки открываются неактивными</small></span>
+      <span class="switch">
+        <input type="checkbox" id="bgMode" checked />
+        <span class="slider"></span>
+      </span>
+    </label>
+  </section>
 
-  <p class="hint">Сервер слушает только 127.0.0.1. Жёлтая плашка «debugging» на вкладке — норма: это Chrome показывает, что вкладка управляется.</p>
+  <details class="settings">
+    <summary>Настройки подключения</summary>
+    <label class="field">Сервер
+      <input id="serverUrl" value="ws://127.0.0.1:8787/ws" spellcheck="false" />
+    </label>
+    <label class="field">Токен
+      <span class="token-row">
+        <input id="token" type="password" placeholder="авто-получение" spellcheck="false" />
+        <button class="icon-btn" id="toggleToken" title="Показать / скрыть">👁</button>
+        <button class="icon-btn" id="copyToken" title="Скопировать">⧉</button>
+      </span>
+      <span class="hint" id="tokenHint">обычно получается автоматически с локального сервера</span>
+    </label>
+  </details>
+
+  <div class="actions">
+    <button id="save" class="primary">Сохранить и переподключить</button>
+    <button id="detachAll" class="danger">Отключить управление всеми вкладками</button>
+  </div>
+
+  <div class="msg" id="msg"></div>
+  <footer>локально · 127.0.0.1 · только ваш Chrome</footer>
   <script src="popup.js"></script>
 </body>
 </html>

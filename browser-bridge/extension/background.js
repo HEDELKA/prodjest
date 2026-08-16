@@ -297,6 +297,28 @@ function updateBadge(connected) {
 // переподключение — бесконечный reconnect-цикл.
 let connecting = false;
 
+let cfgServerUrl = "ws://127.0.0.1:8787/ws";
+let lastTokenFetch = 0;
+
+// Авто-подключение: расширение само забирает токен с локального сервера
+// (127.0.0.1), чтобы пользователю не пришлось вставлять его вручную.
+async function fetchToken(serverUrl) {
+  try {
+    const httpUrl = (serverUrl || "ws://127.0.0.1:8787/ws")
+      .replace(/^ws/, "http")
+      .replace(/\/ws.*$/, "/api/token");
+    const res = await fetch(httpUrl, { cache: "no-store" });
+    if (!res.ok) return null;
+    const token = (await res.text()).trim();
+    if (token) {
+      await chrome.storage.local.set({ token, tokenAuto: true });
+      lastTokenFetch = Date.now();
+      return token;
+    }
+  } catch { /* сервер не запущен */ }
+  return null;
+}
+
 // Будильник: если SW уснул (и таймер переподключения внутри него не сработал),
 // chrome.alarms будит его и переподключает. Рекомендуемый период: >= 0.5 мин.
 chrome.alarms.create("dsh-reconnect", { periodInMinutes: 1 });
@@ -316,13 +338,24 @@ function connect() {
   connecting = true;
   clearTimeout(reconnectTimer);
   config().then(async ({ serverUrl, token, armed }) => {
-    if (!armed || !token) {
+    cfgServerUrl = serverUrl;
+    if (!armed) {
       connecting = false;
       updateBadge(false);
       scheduleReconnect(3000);
       return;
     }
-    const url = serverUrl + (serverUrl.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+    let t = token;
+    if (!t) {
+      t = await fetchToken(serverUrl);
+      if (!t) {
+        connecting = false;
+        updateBadge(false);
+        scheduleReconnect(3000);
+        return;
+      }
+    }
+    const url = serverUrl + (serverUrl.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(t);
     let socket;
     try {
       socket = new WebSocket(url);
@@ -354,7 +387,12 @@ function connect() {
       if (ws === socket) ws = null;
       connecting = false;
       updateBadge(false);
-      scheduleReconnect(2000);
+      // Если сервер перезапустился и сменил токен — обновляем его автоматически.
+      if (Date.now() - lastTokenFetch > 10000) {
+        fetchToken(cfgServerUrl).then(() => scheduleReconnect(500));
+      } else {
+        scheduleReconnect(2000);
+      }
     };
     socket.onerror = () => { try { socket.close(); } catch { /* ignore */ } };
   }).catch(() => {
