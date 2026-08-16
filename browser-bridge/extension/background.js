@@ -76,19 +76,37 @@ const OVERLAY_JS = `
     const head = document.head || document.documentElement;
     if (head) headObs.observe(head, { childList: true });
 
+    // Самоликвидация: если агент молчит > 2 минут (heartbeat не приходит),
+    // оверлей убирается сам — «агент работает» не висит бесконечно
+    // даже после потери сессии/перезагрузки расширения.
+    let lastBeat = Date.now();
+    const beatTimer = setInterval(() => {
+      if (Date.now() - lastBeat > 120000) {
+        clearInterval(beatTimer);
+        root.remove(); style.remove();
+        tObs.disconnect(); headObs.disconnect();
+        try { document.title = originalTitle; } catch { /* ignore */ }
+        window.__dshOverlay = null;
+      }
+    }, 15000);
+
     window.__dshOverlay = {
       show() {},
       hide() {
+        clearInterval(beatTimer);
         root.remove(); style.remove();
         tObs.disconnect(); headObs.disconnect();
         try { document.title = originalTitle; } catch { /* ignore */ }
         window.__dshOverlay = null;
       },
+      heartbeat() { lastBeat = Date.now(); },
       status(t) {
+        lastBeat = Date.now();
         const s = document.getElementById('dsh-status'); if (!s) return;
         s.textContent = 'последнее действие: ' + t;
       },
       cursor(x, y, kind) {
+        lastBeat = Date.now();
         const c = document.getElementById('dsh-cursor'); if (!c) return;
         c.style.transform = 'translate(' + x + 'px,' + y + 'px)';
         const r = document.getElementById('dsh-ring'); if (!r) return;
@@ -263,10 +281,12 @@ async function humanMove(tabId, x, y, duration, cmdId) {
 
 // Keepalive: Chrome замораживает/жёстко тормозит фоновые вкладки после ~5 минут
 // простоя — attach и input-события на них замедляются до 5–17 секунд.
-// Лёгкий пинг каждые 30 с не даёт вкладке под управлением заснуть.
+// Heartbeat каждые 30 с не даёт вкладке заснуть и продлевает жизнь оверлею.
 setInterval(() => {
   for (const tabId of attachedTabs) {
-    chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: "1" }).catch(() => { /* ignore */ });
+    chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+      expression: "window.__dshOverlay && window.__dshOverlay.heartbeat && window.__dshOverlay.heartbeat()",
+    }).catch(() => { /* ignore */ });
   }
 }, 30000);
 
@@ -310,35 +330,28 @@ async function autoDetachAll(reason) {
     try { await chrome.debugger.detach({ tabId: t }); } catch { /* ignore */ }
     attachedTabs.delete(t);
     overlayTabs.delete(t);
-    updateControlledTabs(t, false);
   }
   log("auto-detach (" + reason + "):", tabs.length, "tabs");
   send({ type: "event", event: { kind: "auto-detach", reason, tabs: tabs.length } });
 }
 
-// Вкладки под управлением агента — переживают перезагрузку расширения.
-async function updateControlledTabs(tabId, add) {
-  try {
-    const { controlledTabs } = await chrome.storage.local.get({ controlledTabs: [] });
-    const set = new Set(controlledTabs);
-    if (add) set.add(tabId); else set.delete(tabId);
-    await chrome.storage.local.set({ controlledTabs: [...set] });
-  } catch { /* ignore */ }
-}
-
-// Прогреваем сессии после (пере)загрузки расширения: attach и оверлей
-// ставим заранее, чтобы первая команда не платила штраф attach.
-async function warmUpSessions() {
+// Одноразовая очистка: убираем оверлеи с вкладок, которыми агент управлял
+// в старых версиях (до heartbeat). После очистки список очищается, и вкладки
+// больше не «прогреваются» массово.
+async function cleanupLegacyTabs() {
   const { controlledTabs } = await chrome.storage.local.get({ controlledTabs: [] });
+  if (!controlledTabs.length) return;
   for (const tabId of controlledTabs) {
-    if (attachedTabs.has(tabId)) continue;
-    chrome.debugger.attach({ tabId }, "1.3")
-      .then(async () => {
-        attachedTabs.add(tabId);
-        await installOverlay(tabId);
-      })
-      .catch(() => { /* вкладка закрыта и т.п. — игнорируем */ });
+    try {
+      await chrome.debugger.attach({ tabId }, "1.3");
+      await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+        expression: "window.__dshOverlay && window.__dshOverlay.hide()",
+      });
+      await chrome.debugger.detach({ tabId });
+    } catch { /* вкладка закрыта — игнорируем */ }
   }
+  await chrome.storage.local.set({ controlledTabs: [] });
+  log("cleaned legacy tabs:", controlledTabs.length);
 }
 
 async function installOverlay(tabId) {
@@ -483,7 +496,7 @@ function connect() {
       updateBadge(true);
       connecting = false;
       resetIdle();
-      warmUpSessions();
+      cleanupLegacyTabs(); // одноразовая очистка старых оверлеев
       consolidateAgentGroups(); // объединяем накопившиеся дубликаты групп
     };
     socket.onmessage = (ev) => {
@@ -526,7 +539,6 @@ async function ensureAttached(tabId) {
       if (!String(e).includes("already attached")) throw e;
     }
     attachedTabs.add(tabId);
-    updateControlledTabs(tabId, true);
   }
   if (!overlayTabs.has(tabId)) {
     await installOverlay(tabId);
@@ -537,7 +549,6 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId) {
     attachedTabs.delete(source.tabId);
     overlayTabs.delete(source.tabId);
-    updateControlledTabs(source.tabId, false);
     send({ type: "event", event: { kind: "detach", tabId: source.tabId, reason } });
   }
 });
@@ -589,7 +600,6 @@ async function dispatch(method, params, tabId, cmdId) {
       await chrome.tabs.remove(params.tabId);
       attachedTabs.delete(params.tabId);
       overlayTabs.delete(params.tabId);
-      updateControlledTabs(params.tabId, false);
       // Если группа агента опустела — удаляем её.
       if (t.groupId !== -1) {
         const tabs = await chrome.tabs.query({ groupId: t.groupId });
@@ -619,7 +629,6 @@ async function dispatch(method, params, tabId, cmdId) {
         await chrome.debugger.detach({ tabId: params.tabId });
         attachedTabs.delete(params.tabId);
         overlayTabs.delete(params.tabId);
-        updateControlledTabs(params.tabId, false);
       }
       return { detached: true };
     }

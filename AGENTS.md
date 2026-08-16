@@ -122,8 +122,10 @@ prefix) — do not attach manually.
 - **Attach to background tabs is slow** (measured 6–17 s, sometimes 0.1 s; active
   tabs attach fast). The FIRST command on a tab pays this inside `ensureAttached`.
   → Use a large timeout (≥ 60 000 ms) for the first command on a tab, and normal
-  timeouts afterwards. `warmUpSessions()` re-attaches controlled tabs at connect,
-  so after ~20 s the penalty is usually already paid.
+  timeouts afterwards. Tabs attach **lazily on demand** — there is no mass warm-up
+  (mass warm-up caused debugger bars on many tabs at once).
+- The overlay banner **self-destructs** after ~2 min without a heartbeat, so a
+  «agent works here» banner can never outlive the session (crashes, reloads, idle).
 - Chrome shows a yellow **«X started debugging this browser»** bar on controlled
   tabs. It is normal — do NOT try to remove it. If the user clicks Cancel on it,
   the session detaches (`canceled_by_user`); the next command re-attaches.
