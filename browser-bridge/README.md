@@ -32,17 +32,21 @@
 
 ## Команды агента
 
+JSON-параметры передаются **через файл** (второй аргумент), а не аргументом командной строки —
+это защищает от повреждения кавычек/скобок в некоторых средах:
+
 ```bash
 ./bridge.sh list_tabs
-./bridge.sh open_tab '{"url":"https://example.com"}'
-./bridge.sh activate_tab '{}' 42
-./bridge.sh evaluate '{"expression":"document.title"}' 42
-./bridge.sh cdp '{"method":"Page.navigate","params":{"url":"https://example.com"}}' 42
-./bridge.sh screenshot '{}' 42
-./bridge.sh close_tab '{"tabId":42}'
+./bridge.sh open_tab /tmp/params-open.json        # {"url":"https://example.com"}
+./bridge.sh activate_tab /dev/null 42             # без параметров — /dev/null или пусто
+./bridge.sh evaluate /tmp/params-eval.json 42     # {"expression":"document.title"}
+./bridge.sh cdp /tmp/params-cdp.json 42           # {"method":"Page.navigate","params":{...}}
+./bridge.sh screenshot /dev/null 42               # скриншот вкладки (base64 в ответе)
+./bridge.sh close_tab /tmp/params-close.json      # {"tabId":42}
 ```
 
 Произвольные методы CDP — через `cdp` (Page.*, Runtime.*, Input.*, Network.* и т.д.).
+Нативные клики/ввод — `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent`.
 
 ## Безопасность
 
