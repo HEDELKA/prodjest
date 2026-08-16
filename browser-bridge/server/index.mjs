@@ -131,6 +131,9 @@ const server = http.createServer(async (req, res) => {
       const result = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
+          // Сообщаем расширению об отмене, чтобы оно остановило длинную команду
+          // (иначе «зомби»-циклы продолжают работать после таймаута).
+          send(extSocket, { type: "cancel", id });
           reject(new Error(`bridge timeout after ${timeoutMs}ms`));
         }, timeoutMs);
         pending.set(id, { resolve, reject, timer });

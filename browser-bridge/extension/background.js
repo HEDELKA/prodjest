@@ -186,12 +186,13 @@ function humanPath(x0, y0, x1, y1, steps) {
 }
 
 // Плавное движение мыши из текущей позиции в (x, y) — серия mouseMoved с паузами.
-async function humanMove(tabId, x, y, duration) {
+async function humanMove(tabId, x, y, duration, cmdId) {
   const from = lastCursor || { x: x, y: y - 70 };
   const steps = Math.max(14, Math.min(44, Math.round((duration || 550) / 16)));
   const pts = humanPath(from.x, from.y, x, y, steps);
   const stepMs = Math.max(8, (duration || 550) / steps);
   for (const p of pts) {
+    if (cmdId != null && cancelledIds.has(cmdId)) { cancelledIds.delete(cmdId); throw new Error("cancelled"); }
     await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
     lastCursor = p;
     updateOverlay(tabId, "мышь → (" + p.x + ", " + p.y + ")", p.x, p.y, "move");
@@ -199,6 +200,33 @@ async function humanMove(tabId, x, y, duration) {
   }
   await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
   lastCursor = { x, y };
+}
+
+// Команды, отменённые сервером по таймауту (чтобы не оставлять «зомби»-циклы).
+const cancelledIds = new Set();
+
+// Вкладки под управлением агента — переживают перезагрузку расширения.
+async function updateControlledTabs(tabId, add) {
+  try {
+    const { controlledTabs } = await chrome.storage.local.get({ controlledTabs: [] });
+    const set = new Set(controlledTabs);
+    if (add) set.add(tabId); else set.delete(tabId);
+    await chrome.storage.local.set({ controlledTabs: [...set] });
+  } catch { /* ignore */ }
+}
+
+// Прогреваем сессии после (пере)загрузки расширения: attach и оверлей
+// ставим заранее, чтобы первая команда не платила штраф attach.
+async function warmUpSessions() {
+  const { controlledTabs } = await chrome.storage.local.get({ controlledTabs: [] });
+  for (const tabId of controlledTabs) {
+    chrome.debugger.attach({ tabId }, "1.3")
+      .then(async () => {
+        attachedTabs.add(tabId);
+        await installOverlay(tabId);
+      })
+      .catch(() => { /* вкладка закрыта и т.п. — игнорируем */ });
+  }
 }
 
 async function installOverlay(tabId) {
@@ -297,16 +325,18 @@ function connect() {
     ws = socket;
     socket.onopen = () => {
       log("connected to bridge");
-      send({ type: "hello", name: "dsh-bridge-extension", version: "0.2.0" });
+      send({ type: "hello", name: "dsh-bridge-extension", version: "0.4.0" });
       updateBadge(true);
       connecting = false;
+      warmUpSessions();
     };
     socket.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "ping") { send({ type: "pong" }); return; }
+      if (msg.type === "cancel") { cancelledIds.add(msg.id); return; }
       if (msg.type === "command") {
-        dispatch(msg.method, msg.params || {}, msg.tabId)
+        dispatch(msg.method, msg.params || {}, msg.tabId, msg.id)
           .then((result) => send({ type: "result", id: msg.id, ok: true, result }))
           .catch((err) => send({ type: "result", id: msg.id, ok: false, error: String((err && err.message) || err) }));
       }
@@ -329,6 +359,7 @@ async function ensureAttached(tabId) {
   if (!attachedTabs.has(tabId)) {
     await chrome.debugger.attach({ tabId }, "1.3");
     attachedTabs.add(tabId);
+    updateControlledTabs(tabId, true);
   }
   if (!overlayTabs.has(tabId)) {
     await installOverlay(tabId);
@@ -339,6 +370,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId) {
     attachedTabs.delete(source.tabId);
     overlayTabs.delete(source.tabId);
+    updateControlledTabs(source.tabId, false);
     send({ type: "event", event: { kind: "detach", tabId: source.tabId, reason } });
   }
 });
@@ -359,7 +391,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
 });
 
-async function dispatch(method, params, tabId) {
+async function dispatch(method, params, tabId, cmdId) {
   switch (method) {
     case "list_tabs": {
       const tabs = await chrome.tabs.query({});
@@ -402,6 +434,7 @@ async function dispatch(method, params, tabId) {
       await chrome.tabs.remove(params.tabId);
       attachedTabs.delete(params.tabId);
       overlayTabs.delete(params.tabId);
+      updateControlledTabs(params.tabId, false);
       // Если группа агента опустела — удаляем её.
       const gid = agentGroups.get(t.windowId);
       if (gid) {
@@ -432,6 +465,8 @@ async function dispatch(method, params, tabId) {
         await removeOverlay(params.tabId);
         await chrome.debugger.detach({ tabId: params.tabId });
         attachedTabs.delete(params.tabId);
+        overlayTabs.delete(params.tabId);
+        updateControlledTabs(params.tabId, false);
       }
       return { detached: true };
     }
@@ -492,12 +527,13 @@ async function dispatch(method, params, tabId) {
     }
     case "human_move": {
       await ensureAttached(tabId);
-      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 550));
+      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 550), cmdId);
       return { moved: true, to: { x: params.x, y: params.y } };
     }
     case "human_click": {
       await ensureAttached(tabId);
-      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 650));
+      await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 650), cmdId);
+      if (cmdId != null && cancelledIds.has(cmdId)) { cancelledIds.delete(cmdId); throw new Error("cancelled"); }
       await sleep(70 + Math.random() * 110); // пауза перед нажатием
       await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
         type: "mousePressed", x: params.x, y: params.y, button: "left", clickCount: 1,
@@ -515,7 +551,7 @@ async function dispatch(method, params, tabId) {
       const text = String(params.text || "");
       if (params.x != null && params.y != null) {
         // человеческий клик для фокуса на поле
-        await humanMove(tabId, Number(params.x), Number(params.y), 500);
+        await humanMove(tabId, Number(params.x), Number(params.y), 500, cmdId);
         await sleep(60 + Math.random() * 80);
         await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x: params.x, y: params.y, button: "left", clickCount: 1 });
         await sleep(40 + Math.random() * 60);
@@ -532,6 +568,7 @@ async function dispatch(method, params, tabId) {
       }
       updateOverlay(tabId, "ввод текста…", null, null, null);
       for (const ch of text) {
+        if (cmdId != null && cancelledIds.has(cmdId)) { cancelledIds.delete(cmdId); throw new Error("cancelled"); }
         await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text: ch });
         await sleep(45 + Math.random() * 95);
       }
