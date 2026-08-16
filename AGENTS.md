@@ -59,7 +59,7 @@ $B cdp /tmp/cdp.json <tabId>                 # raw CDP passthrough
 | Method | Params | Notes |
 |---|---|---|
 | `list_tabs` | — | tabs with id/title/url/active/groupId |
-| `open_tab` | `{url, active?}` | background-mode default: inactive; auto-grouped into «DSH-агент» |
+| `open_tab` | `{url, active?}` | background-mode default: inactive; auto-grouped into the **single** «DSH-агент» group (one per window, reused across reloads, duplicates auto-merged) |
 | `close_tab` | `{tabId}` | removes empty agent group |
 | `activate_tab` | `{tabId}` | ignored in background mode (`skipped:true`) |
 | `attach` / `detach` | `{tabId}` | manage the debugger session |
