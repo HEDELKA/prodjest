@@ -610,6 +610,7 @@ async function dispatch(method, params, tabId, cmdId) {
       const set = {};
       for (const k of allowed) if (params[k] !== undefined) set[k] = params[k];
       if (Object.keys(set).length) await chrome.storage.local.set(set);
+      if (params.armed === false) await autoDetachAll("armed-off");
       resetIdle();
       return { set: Object.keys(set) };
     }
