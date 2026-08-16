@@ -131,10 +131,24 @@ function updateBadge(connected) {
   chrome.action.setBadgeBackgroundColor({ color: "#4caf50" });
 }
 
+// Single-flight: одновременно существует только ОДНО WebSocket-соединение.
+// Без этого повторные вызовы connect() (события установки/запуска/перезагрузки)
+// порождают два сокета, сервер закрывает старый, его onclose запускает
+// переподключение — бесконечный reconnect-цикл.
+let connecting = false;
+
 function connect() {
+  if (connecting) return;
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try { old.close(); } catch { /* ignore */ }
+  }
+  connecting = true;
   clearTimeout(reconnectTimer);
   config().then(async ({ serverUrl, token, armed }) => {
     if (!armed || !token) {
+      connecting = false;
       updateBadge(false);
       scheduleReconnect(3000);
       return;
@@ -144,6 +158,7 @@ function connect() {
     try {
       socket = new WebSocket(url);
     } catch (e) {
+      connecting = false;
       scheduleReconnect(3000);
       return;
     }
@@ -152,6 +167,7 @@ function connect() {
       log("connected to bridge");
       send({ type: "hello", name: "dsh-bridge-extension", version: "0.2.0" });
       updateBadge(true);
+      connecting = false;
     };
     socket.onmessage = (ev) => {
       let msg;
@@ -164,11 +180,15 @@ function connect() {
       }
     };
     socket.onclose = () => {
-      ws = null;
+      if (ws === socket) ws = null;
+      connecting = false;
       updateBadge(false);
       scheduleReconnect(2000);
     };
     socket.onerror = () => { try { socket.close(); } catch { /* ignore */ } };
+  }).catch(() => {
+    connecting = false;
+    scheduleReconnect(3000);
   });
 }
 
