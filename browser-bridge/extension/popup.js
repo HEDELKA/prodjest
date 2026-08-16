@@ -35,5 +35,11 @@ $("save").addEventListener("click", async () => {
   setTimeout(() => { $("msg").textContent = ""; refresh(); }, 800);
 });
 
+$("detachAll").addEventListener("click", async () => {
+  const r = await chrome.runtime.sendMessage({ type: "detachAll" });
+  $("msg").textContent = "Отключено вкладок: " + (r && r.detached);
+  setTimeout(() => { $("msg").textContent = ""; }, 2000);
+});
+
 setInterval(refresh, 1000);
 refresh();

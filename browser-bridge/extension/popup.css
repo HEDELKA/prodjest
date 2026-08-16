@@ -53,9 +53,16 @@ button {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  margin-bottom: 6px;
 }
 button:hover {
   background: #1765cc;
+}
+button.danger {
+  background: #d93025;
+}
+button.danger:hover {
+  background: #c5221f;
 }
 #msg {
   margin-top: 6px;
