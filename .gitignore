@@ -1,3 +1,3 @@
 node_modules/
-server/token.txt
+**/server/token.txt
 .DS_Store
