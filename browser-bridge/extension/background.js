@@ -301,11 +301,14 @@ async function dispatch(method, params, tabId) {
       const p = params.params || {};
       if (params.method && params.method.startsWith("Input.") && typeof p.x === "number" && typeof p.y === "number") {
         lastCursor = { x: p.x, y: p.y };
+        // Тип события мыши лежит в params.type (mousePressed/mouseReleased/mouseMoved),
+        // а не в params.method (всегда "Input.dispatchMouseEvent").
         let label;
-        if (params.method.includes("mousePressed")) label = "клик (" + p.x + ", " + p.y + ")";
-        else if (params.method.includes("mouseMoved")) label = "мышь → (" + p.x + ", " + p.y + ")";
+        let kind = "move";
+        if (p.type === "mousePressed") { label = "клик (" + p.x + ", " + p.y + ")"; kind = "click"; }
+        else if (p.type === "mouseMoved") { label = "мышь → (" + p.x + ", " + p.y + ")"; }
         else label = params.method;
-        updateOverlay(tabId, label, p.x, p.y, params.method.includes("mousePressed") ? "click" : "move");
+        updateOverlay(tabId, label, p.x, p.y, kind);
       } else if (params.method && params.method.startsWith("Input.")) {
         updateOverlay(tabId, params.method, null, null, null);
       }
