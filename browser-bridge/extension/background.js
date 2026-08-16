@@ -395,6 +395,21 @@ async function dispatch(method, params, tabId) {
       }
       return { detached: true };
     }
+    case "list_groups": {
+      const groups = await chrome.tabGroups.query({});
+      return groups.map((g) => ({
+        id: g.id,
+        windowId: g.windowId,
+        title: g.title,
+        color: g.color,
+        collapsed: g.collapsed,
+      }));
+    }
+    case "reload_extension": {
+      // Сначала отвечаем по WebSocket, затем перезагружаем service worker.
+      setTimeout(() => chrome.runtime.reload(), 400);
+      return { reloading: true };
+    }
     case "human_move": {
       await ensureAttached(tabId);
       await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 550));
