@@ -130,6 +130,10 @@ prefix) — do not attach manually.
   Respect the cancel: do not auto-re-attach immediately.
 - The bridge server times out commands and sends `{"type":"cancel"}`; long loops
   (`humanMove`, `human_type`) check cancellation and stop — no zombies.
+- **Auto-detach (idle timeout)**: after `idleTimeoutMin` (default 5, 0 = off) without
+  a command, the extension releases all controlled tabs — overlay removed, title
+  restored, debugger detached (yellow bar gone). Turning off «Управление браузером»
+  in the popup also detaches everything. New commands re-attach on demand.
 
 ## Invariants & security (MUST follow)
 

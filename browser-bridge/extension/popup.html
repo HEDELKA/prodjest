@@ -52,6 +52,17 @@
       </span>
       <span class="hint" id="tokenHint">обычно получается автоматически с локального сервера</span>
     </label>
+    <label class="field">Авто-отключение через
+      <select id="idleTimeout" class="select">
+        <option value="0">выключено</option>
+        <option value="1">1 минута</option>
+        <option value="3">3 минуты</option>
+        <option value="5" selected>5 минут</option>
+        <option value="10">10 минут</option>
+        <option value="30">30 минут</option>
+      </select>
+      <span class="hint">если агент не присылает команды — вкладки освобождаются сами</span>
+    </label>
   </details>
 
   <div class="actions">

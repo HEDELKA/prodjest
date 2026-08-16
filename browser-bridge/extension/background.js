@@ -226,6 +226,49 @@ setInterval(() => {
 // Команды, отменённые сервером по таймауту (чтобы не оставлять «зомби»-циклы).
 const cancelledIds = new Set();
 
+// Авто-отключение: если агент не присылал команд дольше idleTimeoutMin,
+// освобождаем вкладки (detach + снятие оверлея), чтобы состояние
+// «агент работает» не висело бесконечно.
+let lastActivity = Date.now();
+let idleCheckTimer = null;
+
+async function getIdleMs() {
+  const { idleTimeoutMin } = await chrome.storage.local.get({ idleTimeoutMin: 5 });
+  const m = Number(idleTimeoutMin) || 0;
+  return m * 60000;
+}
+
+function resetIdle() {
+  lastActivity = Date.now();
+  clearTimeout(idleCheckTimer);
+  getIdleMs().then((ms) => {
+    if (ms > 0) idleCheckTimer = setTimeout(checkIdle, ms + 500);
+  });
+}
+
+async function checkIdle() {
+  const ms = await getIdleMs();
+  if (ms <= 0) return;
+  if (Date.now() - lastActivity >= ms) {
+    await autoDetachAll("idle");
+    return;
+  }
+  resetIdle();
+}
+
+async function autoDetachAll(reason) {
+  const tabs = [...attachedTabs];
+  for (const t of tabs) {
+    try { await removeOverlay(t); } catch { /* ignore */ }
+    try { await chrome.debugger.detach({ tabId: t }); } catch { /* ignore */ }
+    attachedTabs.delete(t);
+    overlayTabs.delete(t);
+    updateControlledTabs(t, false);
+  }
+  log("auto-detach (" + reason + "):", tabs.length, "tabs");
+  send({ type: "event", event: { kind: "auto-detach", reason, tabs: tabs.length } });
+}
+
 // Вкладки под управлением агента — переживают перезагрузку расширения.
 async function updateControlledTabs(tabId, add) {
   try {
@@ -392,6 +435,7 @@ function connect() {
       send({ type: "hello", name: "dsh-bridge-extension", version: "0.4.0" });
       updateBadge(true);
       connecting = false;
+      resetIdle();
       warmUpSessions();
     };
     socket.onmessage = (ev) => {
@@ -400,6 +444,7 @@ function connect() {
       if (msg.type === "ping") { send({ type: "pong" }); return; }
       if (msg.type === "cancel") { cancelledIds.add(msg.id); return; }
       if (msg.type === "command") {
+        resetIdle();
         dispatch(msg.method, msg.params || {}, msg.tabId, msg.id)
           .then((result) => send({ type: "result", id: msg.id, ok: true, result }))
           .catch((err) => send({ type: "result", id: msg.id, ok: false, error: String((err && err.message) || err) }));
@@ -559,6 +604,15 @@ async function dispatch(method, params, tabId, cmdId) {
       setTimeout(() => chrome.runtime.reload(), 400);
       return { reloading: true };
     }
+    case "set_config": {
+      // Агент может менять настройки: armed, bgMode, idleTimeoutMin, serverUrl, token.
+      const allowed = ["armed", "bgMode", "idleTimeoutMin", "serverUrl", "token"];
+      const set = {};
+      for (const k of allowed) if (params[k] !== undefined) set[k] = params[k];
+      if (Object.keys(set).length) await chrome.storage.local.set(set);
+      resetIdle();
+      return { set: Object.keys(set) };
+    }
     case "page_snapshot": {
       await ensureAttached(tabId);
       const res = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
@@ -711,6 +765,10 @@ async function dispatch(method, params, tabId, cmdId) {
 // --- сообщения из popup ---------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "reconnect") {
+    (async () => {
+      const { armed } = await chrome.storage.local.get({ armed: true });
+      if (!armed) await autoDetachAll("armed-off"); // выключили управление — освобождаем всё
+    })();
     if (ws) { try { ws.close(); } catch { /* ignore */ } }
     ws = null;
     connect();

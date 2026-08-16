@@ -26,12 +26,13 @@ async function refresh() {
 }
 
 chrome.storage.local
-  .get({ serverUrl: "ws://127.0.0.1:8787/ws", token: "", tokenAuto: false, armed: true, bgMode: true })
+  .get({ serverUrl: "ws://127.0.0.1:8787/ws", token: "", tokenAuto: false, armed: true, bgMode: true, idleTimeoutMin: 5 })
   .then((c) => {
     $("serverUrl").value = c.serverUrl;
     $("token").value = c.token;
     $("armed").checked = c.armed;
     $("bgMode").checked = c.bgMode;
+    $("idleTimeout").value = String(c.idleTimeoutMin);
     $("tokenHint").textContent = c.tokenAuto
       ? "получен автоматически с локального сервера"
       : c.token
@@ -47,6 +48,7 @@ $("save").addEventListener("click", async () => {
     tokenAuto: false,
     armed: $("armed").checked,
     bgMode: $("bgMode").checked,
+    idleTimeoutMin: Number($("idleTimeout").value),
   });
   await chrome.runtime.sendMessage({ type: "reconnect" });
   showMsg(token ? "Сохранено, переподключение…" : "Сохранено — токен будет получен автоматически");

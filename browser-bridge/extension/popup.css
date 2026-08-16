@@ -209,7 +209,8 @@ body {
   color: #c7d4ec;
   padding: 4px 0 10px;
 }
-.field input {
+.field input,
+.select {
   width: 100%;
   box-sizing: border-box;
   margin-top: 4px;
@@ -219,11 +220,21 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
-  font-family: ui-monospace, Menlo, monospace;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.field input:focus {
+.select {
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%238496b8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 26px;
+}
+.field input:focus,
+.select:focus {
   border-color: var(--sky);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
 }
