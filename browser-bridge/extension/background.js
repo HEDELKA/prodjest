@@ -220,6 +220,7 @@ async function updateControlledTabs(tabId, add) {
 async function warmUpSessions() {
   const { controlledTabs } = await chrome.storage.local.get({ controlledTabs: [] });
   for (const tabId of controlledTabs) {
+    if (attachedTabs.has(tabId)) continue;
     chrome.debugger.attach({ tabId }, "1.3")
       .then(async () => {
         attachedTabs.add(tabId);
@@ -404,7 +405,12 @@ function connect() {
 // --- chrome.debugger ------------------------------------------------------
 async function ensureAttached(tabId) {
   if (!attachedTabs.has(tabId)) {
-    await chrome.debugger.attach({ tabId }, "1.3");
+    try {
+      await chrome.debugger.attach({ tabId }, "1.3");
+    } catch (e) {
+      // Параллельный attach (например, warm-up) мог уже прикрепиться.
+      if (!String(e).includes("already attached")) throw e;
+    }
     attachedTabs.add(tabId);
     updateControlledTabs(tabId, true);
   }

@@ -117,6 +117,20 @@ prefix) — do not attach manually.
 
 `updateOverlay(tabId, label, x, y, kind)` shows the last action / cursor position.
 
+## Timing & Chrome quirks (MUST know)
+
+- **Attach to background tabs is slow** (measured 6–17 s, sometimes 0.1 s; active
+  tabs attach fast). The FIRST command on a tab pays this inside `ensureAttached`.
+  → Use a large timeout (≥ 60 000 ms) for the first command on a tab, and normal
+  timeouts afterwards. `warmUpSessions()` re-attaches controlled tabs at connect,
+  so after ~20 s the penalty is usually already paid.
+- Chrome shows a yellow **«X started debugging this browser»** bar on controlled
+  tabs. It is normal — do NOT try to remove it. If the user clicks Cancel on it,
+  the session detaches (`canceled_by_user`); the next command re-attaches.
+  Respect the cancel: do not auto-re-attach immediately.
+- The bridge server times out commands and sends `{"type":"cancel"}`; long loops
+  (`humanMove`, `human_type`) check cancellation and stop — no zombies.
+
 ## Invariants & security (MUST follow)
 
 - **Never commit `server/token.txt`** — it is gitignored; keep it that way. If it
