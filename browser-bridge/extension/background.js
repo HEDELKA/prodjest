@@ -239,8 +239,18 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 });
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (source.tabId && (method === "Page.loadEventFired" || method === "Page.javascriptDialogOpening")) {
-    send({ type: "event", event: { kind: "cdp", tabId: source.tabId, method, params } });
+  if (source.tabId) {
+    if (method === "Page.loadEventFired") {
+      send({ type: "event", event: { kind: "cdp", tabId: source.tabId, method, params } });
+      // Восстанавливаем призрачный курсор в новой странице после навигации.
+      if (lastCursor && attachedTabs.has(source.tabId)) {
+        chrome.debugger.sendCommand({ tabId: source.tabId }, "Runtime.evaluate", {
+          expression: "window.__dshOverlay && window.__dshOverlay.cursor(" + lastCursor.x + ", " + lastCursor.y + ", null)",
+        }).catch(() => { /* ignore */ });
+      }
+    } else if (method === "Page.javascriptDialogOpening") {
+      send({ type: "event", event: { kind: "cdp", tabId: source.tabId, method, params } });
+    }
   }
 });
 
