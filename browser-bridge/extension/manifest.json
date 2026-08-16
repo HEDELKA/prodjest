@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DSH Browser Bridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Локальный мост: позволяет агенту DeepSeek Harness управлять этим браузером Chrome через chrome.debugger (соединение только с 127.0.0.1, по токену).",
   "permissions": ["debugger", "tabs", "storage", "tabGroups"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],

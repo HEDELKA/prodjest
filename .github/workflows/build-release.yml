@@ -1,0 +1,27 @@
+name: build-store-package
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Chrome Web Store ZIP
+        run: |
+          cd browser-bridge/extension
+          zip -r ../../dsh-browser-bridge-${{ github.ref_name }}.zip . -x '*.DS_Store'
+
+      - name: Attach ZIP to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            dsh-browser-bridge-${{ github.ref_name }}.zip --clobber \
+          || gh release create "${{ github.ref_name }}" \
+            dsh-browser-bridge-${{ github.ref_name }}.zip --generate-notes

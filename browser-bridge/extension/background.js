@@ -123,6 +123,46 @@ const OVERLAY_JS = `
 // Последняя позиция курсора (чтобы восстановить его после перехода страницы).
 let lastCursor = null;
 
+// Снимок страницы: карта видимых интерактивных элементов с координатами.
+// Один вызов даёт агенту всё необходимое для DOM-подхода (без десятков запросов).
+const PAGE_SNAPSHOT_JS = `
+(() => {
+  const out = { url: location.href, title: document.title, elements: [] };
+  const sel = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="textbox"], [contenteditable="true"], [onclick]';
+  const seen = new Set();
+  const els = document.querySelectorAll(sel);
+  for (const el of els) {
+    if (seen.has(el)) continue;
+    seen.add(el);
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+    const st = getComputedStyle(el);
+    if (st.visibility === 'hidden' || st.display === 'none') continue;
+    const tag = el.tagName.toLowerCase();
+    let text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+    if (tag === 'a' && !text) text = el.href || '';
+    if (!text && tag !== 'input' && tag !== 'button' && tag !== 'select' && tag !== 'textarea') continue;
+    out.elements.push({
+      tag,
+      text: text.slice(0, 120),
+      x: Math.round(r.x + r.width / 2),
+      y: Math.round(r.y + r.height / 2),
+      w: Math.round(r.width),
+      h: Math.round(r.height),
+      id: el.id || '',
+      name: el.getAttribute('name') || '',
+      type: el.type || '',
+      placeholder: el.placeholder || '',
+      href: el.href || '',
+      value: el.value ? String(el.value).slice(0, 60) : '',
+    });
+  }
+  out.count = out.elements.length;
+  return out;
+})();
+`;
+
 // Группы вкладок агента: windowId -> groupId («DSH-агент»).
 let agentGroups = new Map();
 
@@ -410,6 +450,46 @@ async function dispatch(method, params, tabId) {
       setTimeout(() => chrome.runtime.reload(), 400);
       return { reloading: true };
     }
+    case "page_snapshot": {
+      await ensureAttached(tabId);
+      const res = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+        expression: PAGE_SNAPSHOT_JS,
+        returnByValue: true,
+      });
+      if (res.exceptionDetails) {
+        const d = res.exceptionDetails.exception;
+        throw new Error("snapshot exception: " + (d && d.description ? d.description : res.exceptionDetails.text));
+      }
+      updateOverlay(tabId, "снимок страницы", null, null, null);
+      return res.result.value;
+    }
+    case "press_key": {
+      await ensureAttached(tabId);
+      const key = String(params.key || "Enter");
+      const table = {
+        Enter: { key: "Enter", code: "Enter", vk: 13 },
+        Tab: { key: "Tab", code: "Tab", vk: 9 },
+        Escape: { key: "Escape", code: "Escape", vk: 27 },
+        Backspace: { key: "Backspace", code: "Backspace", vk: 8 },
+        Delete: { key: "Delete", code: "Delete", vk: 46 },
+        ArrowUp: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+        ArrowDown: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
+        ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", vk: 37 },
+        ArrowRight: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
+        Home: { key: "Home", code: "Home", vk: 36 },
+        End: { key: "End", code: "End", vk: 35 },
+      };
+      const k = table[key] || { key, code: key, vk: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0 };
+      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
+        type: "keyDown", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
+      });
+      await sleep(30 + Math.random() * 50);
+      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
+        type: "keyUp", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
+      });
+      updateOverlay(tabId, "клавиша: " + key, null, null, null);
+      return { key };
+    }
     case "human_move": {
       await ensureAttached(tabId);
       await humanMove(tabId, Number(params.x), Number(params.y), Number(params.duration || 550));
@@ -433,13 +513,42 @@ async function dispatch(method, params, tabId) {
     case "human_type": {
       await ensureAttached(tabId);
       const text = String(params.text || "");
+      if (params.x != null && params.y != null) {
+        // человеческий клик для фокуса на поле
+        await humanMove(tabId, Number(params.x), Number(params.y), 500);
+        await sleep(60 + Math.random() * 80);
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x: params.x, y: params.y, button: "left", clickCount: 1 });
+        await sleep(40 + Math.random() * 60);
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x: params.x, y: params.y, button: "left", clickCount: 1 });
+        lastCursor = { x: params.x, y: params.y };
+        updateOverlay(tabId, "фокус на поле (" + params.x + ", " + params.y + ")", params.x, params.y, "click");
+        await sleep(140 + Math.random() * 160);
+      }
+      if (params.clear) {
+        await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+          expression: "(()=>{const el=document.activeElement;if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){el.select();return true}return false})()",
+        });
+        await sleep(50);
+      }
       updateOverlay(tabId, "ввод текста…", null, null, null);
       for (const ch of text) {
         await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text: ch });
         await sleep(45 + Math.random() * 95);
       }
-      updateOverlay(tabId, "ввод: " + text.slice(0, 24), null, null, null);
-      return { typed: text.length };
+      if (params.enter) {
+        await sleep(120 + Math.random() * 120);
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
+          type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
+        });
+        await sleep(30 + Math.random() * 40);
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
+          type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
+        });
+        updateOverlay(tabId, "ввод: " + text.slice(0, 20) + " ↵", null, null, null);
+      } else {
+        updateOverlay(tabId, "ввод: " + text.slice(0, 24), null, null, null);
+      }
+      return { typed: text.length, focused: params.x != null, cleared: !!params.clear, entered: !!params.enter };
     }
     case "cdp": {
       await ensureAttached(tabId);

@@ -69,7 +69,9 @@ $B cdp /tmp/cdp.json <tabId>                 # raw CDP passthrough
 | `screenshot` | `{format?}` | returns base64 PNG |
 | `human_move` | `{x, y, duration?}` | smooth Bézier path, jitter, natural pauses |
 | `human_click` | `{x, y, duration?}` | smooth move + pause + press/release with delays |
-| `human_type` | `{text}` | character-by-character input with delays |
+| `human_type` | `{text, x?, y?, clear?, enter?}` | optional click-focus, select-all clear, per-char typing, Enter |
+| `press_key` | `{key}` | Enter / Tab / Escape / Backspace / Delete / arrows / Home / End |
+| `page_snapshot` | — | **interaction map**: visible links/buttons/inputs with center coordinates — one call replaces many DOM queries |
 | `reload_extension` | — | **self-reload**: applies extension code changes instantly |
 | `list_groups` | — | inspect tab groups |
 
