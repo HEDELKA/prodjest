@@ -202,6 +202,15 @@ async function humanMove(tabId, x, y, duration, cmdId) {
   lastCursor = { x, y };
 }
 
+// Keepalive: Chrome замораживает/жёстко тормозит фоновые вкладки после ~5 минут
+// простоя — attach и input-события на них замедляются до 5–17 секунд.
+// Лёгкий пинг каждые 30 с не даёт вкладке под управлением заснуть.
+setInterval(() => {
+  for (const tabId of attachedTabs) {
+    chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: "1" }).catch(() => { /* ignore */ });
+  }
+}, 30000);
+
 // Команды, отменённые сервером по таймауту (чтобы не оставлять «зомби»-циклы).
 const cancelledIds = new Set();
 
