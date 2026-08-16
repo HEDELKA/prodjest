@@ -1,0 +1,10 @@
+{
+  "name": "dsh-browser-bridge-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Локальный мост (127.0.0.1) между агентом DeepSeek Harness и расширением Chrome.",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

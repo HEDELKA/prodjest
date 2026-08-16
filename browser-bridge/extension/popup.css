@@ -1,0 +1,70 @@
+body {
+  width: 260px;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  padding: 10px 12px;
+  color: #1f2328;
+}
+h1 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+.status {
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.status.online {
+  background: #e6f4ea;
+  color: #137333;
+}
+.status.offline {
+  background: #fce8e6;
+  color: #c5221f;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+label.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+input[type="text"],
+input:not([type]) {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 3px;
+  padding: 5px 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-weight: 400;
+}
+button {
+  width: 100%;
+  padding: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #1a73e8;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover {
+  background: #1765cc;
+}
+#msg {
+  margin-top: 6px;
+  color: #137333;
+  min-height: 16px;
+}
+.hint {
+  margin-top: 8px;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.4;
+}
