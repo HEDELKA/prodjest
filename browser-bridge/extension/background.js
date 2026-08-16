@@ -111,6 +111,7 @@ async function config() {
     serverUrl: "ws://127.0.0.1:8787/ws",
     token: "",
     armed: true,
+    bgMode: true,
   });
   return c;
 }
@@ -231,11 +232,14 @@ async function dispatch(method, params, tabId) {
       }));
     }
     case "open_tab": {
+      const cfg = await config();
+      // Фоновый режим: вкладки открываются НЕактивными, не перехватывая фокус.
+      const active = params.active !== undefined ? !!params.active : !cfg.bgMode;
       const t = await chrome.tabs.create({
         url: params.url || "chrome://newtab/",
-        active: params.active !== false,
+        active,
       });
-      return { id: t.id, url: t.url };
+      return { id: t.id, url: t.url, active };
     }
     case "close_tab": {
       await chrome.tabs.remove(params.tabId);
@@ -244,6 +248,11 @@ async function dispatch(method, params, tabId) {
       return { closed: true };
     }
     case "activate_tab": {
+      const cfg = await config();
+      // Фоновый режим: не переключаем видимую вкладку пользователя.
+      if (cfg.bgMode) {
+        return { backgroundMode: true, skipped: true, message: "activate_tab отключён в фоновом режиме" };
+      }
       const t = await chrome.tabs.update(params.tabId, { active: true });
       if (t.windowId) await chrome.windows.update(t.windowId, { focused: true });
       return { id: t.id, active: true, url: t.url };
