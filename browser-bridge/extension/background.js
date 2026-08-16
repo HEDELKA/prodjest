@@ -186,19 +186,31 @@ function humanPath(x0, y0, x1, y1, steps) {
 }
 
 // Плавное движение мыши из текущей позиции в (x, y) — серия mouseMoved с паузами.
+// Адаптивность: если вкладка заторможена Chrome (события идут по 5–17 с),
+// плавность отключается — курсор телепортируется к цели (клик остаётся быстрым).
 async function humanMove(tabId, x, y, duration, cmdId) {
   const from = lastCursor || { x: x, y: y - 70 };
   const steps = Math.max(14, Math.min(44, Math.round((duration || 550) / 16)));
   const pts = humanPath(from.x, from.y, x, y, steps);
   const stepMs = Math.max(8, (duration || 550) / steps);
-  for (const p of pts) {
+  let throttled = false;
+  for (let i = 0; i < pts.length; i++) {
     if (cmdId != null && cancelledIds.has(cmdId)) { cancelledIds.delete(cmdId); throw new Error("cancelled"); }
+    const p = pts[i];
+    const t0 = Date.now();
     await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
+    const dt = Date.now() - t0;
+    if (i < 4 && dt > 500) {
+      throttled = true; // вкладка заморожена — хватит плавности
+      break;
+    }
     lastCursor = p;
     updateOverlay(tabId, "мышь → (" + p.x + ", " + p.y + ")", p.x, p.y, "move");
     await sleep(stepMs + Math.random() * stepMs * 0.6);
   }
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  if (throttled) {
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  }
   lastCursor = { x, y };
 }
 
