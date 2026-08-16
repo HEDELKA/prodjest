@@ -290,6 +290,34 @@ setInterval(() => {
   }
 }, 30000);
 
+// Пер-вкладочное авто-отключение: плашка «запустил отладку этого браузера»
+// в новых версиях Chrome показывается на ВСЕХ вкладках окна, пока есть активная
+// сессия. Чтобы плашки не висели — отключаемся от вкладки через detachAfterSec
+// (по умолчанию 30 с) после последней команды на ней (если команда ещё
+// выполняется — вкладку не трогаем).
+const lastCmdPerTab = new Map();
+const busyTabs = new Set();
+
+async function detachIdleTabs() {
+  const { detachAfterSec } = await chrome.storage.local.get({ detachAfterSec: 30 });
+  const ms = Number(detachAfterSec || 0) * 1000;
+  if (ms <= 0) return;
+  const now = Date.now();
+  for (const tabId of [...attachedTabs]) {
+    if (busyTabs.has(tabId)) continue;
+    const last = lastCmdPerTab.get(tabId) || now;
+    if (now - last >= ms) {
+      try { await removeOverlay(tabId); } catch { /* ignore */ }
+      try { await chrome.debugger.detach({ tabId }); } catch { /* ignore */ }
+      attachedTabs.delete(tabId);
+      overlayTabs.delete(tabId);
+      lastCmdPerTab.delete(tabId);
+      log("per-tab detach (idle):", tabId);
+    }
+  }
+}
+setInterval(detachIdleTabs, 10000);
+
 // Команды, отменённые сервером по таймауту (чтобы не оставлять «зомби»-циклы).
 const cancelledIds = new Set();
 
@@ -330,7 +358,9 @@ async function autoDetachAll(reason) {
     try { await chrome.debugger.detach({ tabId: t }); } catch { /* ignore */ }
     attachedTabs.delete(t);
     overlayTabs.delete(t);
+    lastCmdPerTab.delete(t);
   }
+  busyTabs.clear();
   log("auto-detach (" + reason + "):", tabs.length, "tabs");
   send({ type: "event", event: { kind: "auto-detach", reason, tabs: tabs.length } });
 }
@@ -506,9 +536,19 @@ function connect() {
       if (msg.type === "cancel") { cancelledIds.add(msg.id); return; }
       if (msg.type === "command") {
         resetIdle();
+        if (msg.tabId != null) {
+          lastCmdPerTab.set(msg.tabId, Date.now());
+          busyTabs.add(msg.tabId);
+        }
         dispatch(msg.method, msg.params || {}, msg.tabId, msg.id)
-          .then((result) => send({ type: "result", id: msg.id, ok: true, result }))
-          .catch((err) => send({ type: "result", id: msg.id, ok: false, error: String((err && err.message) || err) }));
+          .then((result) => {
+            if (msg.tabId != null) busyTabs.delete(msg.tabId);
+            send({ type: "result", id: msg.id, ok: true, result });
+          })
+          .catch((err) => {
+            if (msg.tabId != null) busyTabs.delete(msg.tabId);
+            send({ type: "result", id: msg.id, ok: false, error: String((err && err.message) || err) });
+          });
       }
     };
     socket.onclose = () => {
@@ -549,6 +589,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId) {
     attachedTabs.delete(source.tabId);
     overlayTabs.delete(source.tabId);
+    lastCmdPerTab.delete(source.tabId);
     send({ type: "event", event: { kind: "detach", tabId: source.tabId, reason } });
   }
 });
