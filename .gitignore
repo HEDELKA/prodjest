@@ -1,3 +1,5 @@
 node_modules/
 **/server/token.txt
 .DS_Store
+release/*.zip
+release/shot*.json
