@@ -297,6 +297,15 @@ function updateBadge(connected) {
 // переподключение — бесконечный reconnect-цикл.
 let connecting = false;
 
+// Будильник: если SW уснул (и таймер переподключения внутри него не сработал),
+// chrome.alarms будит его и переподключает. Рекомендуемый период: >= 0.5 мин.
+chrome.alarms.create("dsh-reconnect", { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "dsh-reconnect" && !(ws && ws.readyState === WebSocket.OPEN)) {
+    connect();
+  }
+});
+
 function connect() {
   if (connecting) return;
   if (ws) {
@@ -644,6 +653,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   } else if (msg.type === "getStatus") {
     (async () => {
       const { armed } = await chrome.storage.local.get({ armed: true });
+      // Открытие попапа будит SW — заодно гарантируем переподключение.
+      if (!(ws && ws.readyState === WebSocket.OPEN)) connect();
       sendResponse({ connected: !!(ws && ws.readyState === WebSocket.OPEN), armed });
     })();
     return true; // async response
