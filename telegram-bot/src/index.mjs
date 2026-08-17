@@ -764,6 +764,19 @@ async function main() {
 
   dsh.start((frame) => manager.handleFrame(frame));
 
+  // Restore watched sessions after a restart: the mapping persists in
+  // state.json, but in-memory streams are gone — re-attach so the agent's
+  // output keeps streaming to Telegram without the user pressing watch again.
+  for (const [chatId, rec] of Object.entries(store.data.chats ?? {})) {
+    if (rec?.watchedSessionId) {
+      manager.attach(chatId, rec.watchedSessionId, { announce: false });
+      manager
+        .notify(chatId, "🔁 Бот перезапущен — наблюдение восстановлено, стриминг продолжается.")
+        .catch(() => {});
+      console.log(`[tg] восстановлено наблюдение: chat ${chatId} -> ${rec.watchedSessionId}`);
+    }
+  }
+
   bot.catch((err) => console.error("[tg] unhandled:", err?.message ?? err));
 
   bot.launch({ dropPendingUpdates: true });
