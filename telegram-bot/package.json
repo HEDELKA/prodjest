@@ -1,0 +1,17 @@
+{
+  "name": "dsh-telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram remote control for DeepSeek Harness: live task streaming, stop, voice corrections via local Whisper",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "model": "bash scripts/download-model.sh"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "telegramToken": "123456:ABC-DEF...",
+  "allowedChatIds": [],
+  "dshUrl": "http://127.0.0.1:3080",
+  "defaultCwd": "/Users/hedelka/Documents/prodjest",
+  "whisperCli": "/Users/hedelka/Documents/ChatGPT/wisper/third_party/whisper.cpp/build-x86_64/bin/whisper-cli",
+  "whisperModel": "models/ggml-base.bin",
+  "opusdec": "/opt/homebrew/bin/opusdec",
+  "streamIntervalMs": 1200,
+  "maxMessageChars": 3800
+}
