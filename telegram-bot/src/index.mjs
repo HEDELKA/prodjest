@@ -16,18 +16,24 @@ const bot = new Telegraf(cfg.telegramToken);
 bot.Markup = Markup;
 
 // ---------- callback registry (callback_data <= 64 bytes) ----------
-const cbTokens = new Map();
+const cbTokens = new Map(); // token -> {payload, at}
+const CB_TTL_MS = 60 * 60 * 1000;
 const cb = {
   set(payload) {
+    // prune stale tokens occasionally
+    if (cbTokens.size > 500) {
+      const now = Date.now();
+      for (const [t, v] of cbTokens) if (now - v.at > CB_TTL_MS) cbTokens.delete(t);
+    }
     let token;
     do {
       token = Math.random().toString(36).slice(2, 8);
     } while (cbTokens.has(token));
-    cbTokens.set(token, payload);
+    cbTokens.set(token, { payload, at: Date.now() });
     return token;
   },
   get(token) {
-    return cbTokens.get(token);
+    return cbTokens.get(token)?.payload;
   },
 };
 bot.cb = cb;
@@ -54,6 +60,11 @@ function allowed(ctx) {
 
 function deny(ctx) {
   return ctx.reply("⛔️ Доступ запрещён. Отправьте /start с разрешённого аккаунта.").catch(() => {});
+}
+
+/** Build { parse_mode: "HTML", reply_markup } from inline keyboard rows. */
+function kb(rows) {
+  return { parse_mode: "HTML", ...Markup.inlineKeyboard(rows) };
 }
 
 // ---------- menus ----------
@@ -107,10 +118,7 @@ async function replyProjects(ctx, chatId) {
     Markup.button.callback("🔄", "cb:" + cb.set({ kind: "tasks" })),
     Markup.button.callback("✖️", "cb:" + cb.set({ kind: "close" })),
   ]);
-  const msg = await ctx.reply("📋 <b>Проекты</b> — выберите, за чем наблюдать", {
-    parse_mode: "HTML",
-    reply_markup: Markup.inlineKeyboard(rows),
-  });
+  const msg = await ctx.reply("📋 <b>Проекты</b> — выберите, за чем наблюдать", kb(rows));
   return msg;
 }
 
@@ -139,9 +147,9 @@ async function replyProjectSessions(ctx, chatId, cwd, { editMsgId } = {}) {
   const text = `📁 <b>${esc(cwd)}</b>`;
   const keyboard = Markup.inlineKeyboard(rows);
   if (editMsgId) {
-    await ctx.telegram.editMessageText(chatId, editMsgId, undefined, text, { parse_mode: "HTML", reply_markup: keyboard }).catch(() => {});
+    await ctx.telegram.editMessageText(chatId, editMsgId, undefined, text, { parse_mode: "HTML", ...keyboard }).catch(() => {});
   } else {
-    await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+    await ctx.reply(text, { ...kb(rows) });
   }
 }
 
@@ -164,7 +172,7 @@ async function newTaskFlow(chatId, cwd) {
       Markup.button.callback("❌", "cb:" + cb.set({ kind: "close" })),
     ],
   ];
-  await bot.telegram.sendMessage(chatId, "📍 <b>Где создать задачу?</b>", { parse_mode: "HTML", reply_markup: Markup.inlineKeyboard(rows) }).catch(() => {});
+  await bot.telegram.sendMessage(chatId, "📍 <b>Где создать задачу?</b>", kb(rows)).catch(() => {});
 }
 
 async function askTaskText(chatId, cwd) {
@@ -264,9 +272,9 @@ function renderQuestion(chatId, flow) {
   buttons.push([Markup.button.callback("❌ Отмена", "cb:" + cb.set({ kind: "qcancel", rpcId: flow.rpcId }))]);
   const text = lines.join("\n");
   if (flow.msgId) {
-    bot.telegram.editMessageText(chatId, flow.msgId, undefined, text, { parse_mode: "HTML", reply_markup: Markup.inlineKeyboard(buttons) }).catch(() => {});
+    bot.telegram.editMessageText(chatId, flow.msgId, undefined, text, { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) }).catch(() => {});
   } else {
-    bot.telegram.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: Markup.inlineKeyboard(buttons) }).then((m) => (flow.msgId = m.message_id)).catch(() => {});
+    bot.telegram.sendMessage(chatId, text, kb(buttons)).then((m) => (flow.msgId = m.message_id)).catch(() => {});
   }
 }
 
@@ -445,7 +453,7 @@ bot.start(async (ctx) => {
   await ctx
     .reply(
       `👋 Привет! Я пульт управления задачами DeepSeek Harness.\n${fresh ? "Чат зарегистрирован — теперь только вы можете управлять." : "Чат уже зарегистрирован."}\n\nВыберите действие:`,
-      { parse_mode: "HTML", reply_markup: mainMenu() }
+      { parse_mode: "HTML", ...mainMenu() }
     )
     .catch(() => {});
 });

@@ -33,7 +33,7 @@ export class StreamManager {
       this.bot.telegram
         .sendMessage(chatId, `📡 Наблюдаю за задачей <code>${esc(short(sessionId))}</code>`, {
           parse_mode: "HTML",
-          reply_markup: this.controlKeyboard(),
+          ...this.controlKeyboard(),
         })
         .then((m) => (st.announceMsgId = m.message_id))
         .catch(() => {});
@@ -472,7 +472,7 @@ class StreamState {
     this.bot.telegram
       .sendMessage(this.chatId, text, {
         parse_mode: "HTML",
-        reply_markup: Markup.inlineKeyboard([
+        ...Markup.inlineKeyboard([
           Markup.button.callback("✅ Разрешить", "cb:" + this.bot.cb.set({ kind: "approve", rpcId, approvalId: frame.approvalId, sessionId: frame.sessionId, allow: true })),
           Markup.button.callback("❌ Отклонить", "cb:" + this.bot.cb.set({ kind: "approve", rpcId, approvalId: frame.approvalId, sessionId: frame.sessionId, allow: false })),
         ]),
