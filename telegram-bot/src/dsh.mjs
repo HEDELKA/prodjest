@@ -33,14 +33,14 @@ export class DshClient {
 
   // ---------- unary RPC ----------
 
-  async rpc(method, payload, { timeoutMs = 30000, signal } = {}) {
-    const rpcId = crypto.randomUUID();
+  async rpc(method, payload, { timeoutMs = 30000, signal, rpcId } = {}) {
+    const id = rpcId ?? crypto.randomUUID();
     let res;
     try {
       res = await fetch(`${this.url}/api/${method}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "client-request", rpcId, method, payload }),
+        body: JSON.stringify({ type: "client-request", rpcId: id, method, payload }),
         signal: signal ?? AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
@@ -51,7 +51,7 @@ export class DshClient {
       throw new DshError(method, `http-${res.status}`, `HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
     const full = await res.json();
-    if (full?.type !== "server-response" || full.rpcId !== rpcId) {
+    if (full?.type !== "server-response" || full.rpcId !== id) {
       throw new DshError(method, "protocol", "invalid server envelope");
     }
     if (!full.result?.ok) {
@@ -85,12 +85,18 @@ export class DshClient {
     });
   }
 
-  prompt(sessionId, text, mode = "queue") {
-    return this.rpc("session.prompt", {
-      sessionId,
-      mode,
-      content: [{ type: "text", text }],
-    });
+  async prompt(sessionId, text, mode = "queue") {
+    const rpcId = crypto.randomUUID();
+    const value = await this.rpc(
+      "session.prompt",
+      {
+        sessionId,
+        mode,
+        content: [{ type: "text", text }],
+      },
+      { rpcId }
+    );
+    return { value, rpcId };
   }
 
   cancel(sessionId) {
@@ -139,22 +145,27 @@ export class DshClient {
       console.log("[dsh] mux stream connected");
     };
     ws.onmessage = (ev) => {
-      let msg;
       try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (msg?.type === "server-request" && msg.payload) {
-        // Answerable frames need the envelope's rpcId to respond later.
-        const p = msg.payload;
-        if (
-          (p.type === "approval/requested" || p.type === "question/requested") &&
-          p.rpcId === undefined
-        ) {
-          p.rpcId = msg.rpcId;
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
+          return;
         }
-        this.onFrame?.(p);
+        if (msg?.type === "server-request" && msg.payload) {
+          // Answerable frames need the envelope's rpcId to respond later.
+          const p = msg.payload;
+          if (
+            (p.type === "approval/requested" || p.type === "question/requested") &&
+            p.rpcId === undefined
+          ) {
+            p.rpcId = msg.rpcId;
+          }
+          this.onFrame?.(p);
+        }
+      } catch (err) {
+        // A handler bug must never take down the polling process.
+        console.log("[dsh] frame handling error:", err?.message ?? err);
       }
     };
     ws.onclose = () => {

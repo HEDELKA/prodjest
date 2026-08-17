@@ -6,10 +6,11 @@ import { esc, truncate, contentText } from "./format.mjs";
  * goes to its own "🧠" message; tool calls/results become status messages.
  */
 export class StreamManager {
-  constructor(bot, dsh, { streamIntervalMs = 1200, maxMessageChars = 3800, store } = {}) {
+  constructor(bot, dsh, { streamIntervalMs = 1200, maxMessageChars = 3800, store, botPromptIds } = {}) {
     this.bot = bot;
     this.dsh = dsh;
     this.store = store;
+    this.botPromptIds = botPromptIds ?? new Set();
     this.streamIntervalMs = streamIntervalMs;
     this.maxMessageChars = maxMessageChars;
     this.streams = new Map(); // "chatId:sessionId" -> StreamState
@@ -39,7 +40,7 @@ export class StreamManager {
         .catch(() => {});
     }
     // Digest of the recent past so the user sees where the task is right now.
-    st.backfill().catch(() => {});
+    st.syncHistory().catch(() => {});
     return st;
   }
 
@@ -60,7 +61,7 @@ export class StreamManager {
         // Reconnect hook: backfill anything missed while the socket was down.
         for (const [key, st] of this.streams) {
           if (st.sessionId === frame.sessionId && st.lastSeq < frame.lastSeq) {
-            st.backfill().catch(() => {});
+            st.syncHistory().catch(() => {});
           }
         }
         break;
@@ -86,7 +87,7 @@ export class StreamManager {
   dispatchEvent(sessionId, event) {
     for (const [key, st] of this.streams) {
       if (st.sessionId !== sessionId || st.muted) continue;
-      st.enqueue(event);
+      st.handleEvent(event);
     }
   }
 
@@ -175,37 +176,47 @@ class StreamState {
     }
   }
 
-  // ---------- backfill ----------
+  // ---------- history sync ----------
 
-  /** Digest of the recent past: last few assistant/user messages. */
-  async backfill() {
+  /**
+   * Chronological conversation sync: render every unseen user/assistant
+   * message as its own Telegram message, in order — a faithful mirror, not a
+   * compressed digest. The user's own Telegram messages (steered by this bot)
+   * are skipped: they already see them natively in the chat.
+   */
+  async syncHistory() {
     try {
-      const { events } = await this.manager.dsh.history(this.sessionId, { maxMessages: 40 });
+      const { events } = await this.manager.dsh.history(this.sessionId, { maxMessages: 80 });
       const sorted = [...events]
         .map((e) => e.event)
         .filter((e) => e && Number.isInteger(e.seq))
         .sort((a, b) => a.seq - b.seq);
       const newest = sorted.at(-1)?.seq ?? -1;
-      if (newest <= this.lastSeq) return; // nothing new since we last saw it
-      this.lastSeq = Math.max(this.lastSeq, newest);
-      const assistants = sorted.filter((e) => e.type === "assistant/message").slice(-3);
-      const users = sorted.filter((e) => e.type === "user/message" && e.data?.source?.kind === "user").slice(-3);
-      const parts = [];
-      const digest = [...users, ...assistants].sort((a, b) => a.seq - b.seq);
-      if (digest.length) parts.push("📜 <b>Что было недавно:</b>");
-      for (const ev of digest) {
-        const text =
-          ev.type === "user/message"
-            ? contentText(ev.data?.content)
-            : contentText(ev.data?.message?.content);
-        const clean = String(text ?? "").replace(/\s+/g, " ").trim();
-        if (!clean) continue;
-        parts.push(`${ev.type === "user/message" ? "📨" : "🤖"} ${esc(truncate(clean, 280))}`);
+      if (newest <= this.lastSeq) return;
+      const unseen = sorted.filter((e) => e.seq > this.lastSeq);
+      const relevant = unseen.filter((e) => e.type === "assistant/message" || e.type === "user/message");
+      if (relevant.length === 0) return;
+      this.lastSeq = newest;
+      for (const ev of relevant.slice(-40)) {
+        if (ev.type === "assistant/message") {
+          const text = contentText(ev.data?.message?.content);
+          if (text) await this.sendChunks(`🤖 ${String(text).trim()}`);
+        } else {
+          const source = ev.data?.source;
+          if (source?.rpcId && this.manager.botPromptIds?.has(source.rpcId)) continue;
+          const text = contentText(ev.data?.content ?? ev.data?.message?.content);
+          if (text) await this.sendChunks(`📨 <b>Вы:</b> ${String(text).trim()}`);
+        }
       }
-      if (parts.length > 1) this.note(parts.join("\n"));
     } catch (err) {
-      console.log("[stream] backfill failed:", err.message);
+      console.log("[stream] sync failed:", err.message);
     }
+  }
+
+  /** Send a possibly long message split across Telegram's size limit. */
+  async sendChunks(text) {
+    const parts = splitRendered(text, this.manager.maxMessageChars);
+    for (const part of parts) await this.note(part);
   }
 
   // ---------- events ----------
@@ -251,8 +262,12 @@ class StreamState {
           const msg = event.data?.message ?? event.data;
           const source = msg?.source ?? event.data?.source;
           if (source?.kind === "user") {
+            // The user's own Telegram messages are already visible natively in
+            // the chat — skip the echo. GUI-typed messages are echoed so the
+            // mirror stays complete.
+            if (source?.rpcId && this.manager.botPromptIds?.has(source.rpcId)) break;
             const text = contentText(msg?.content);
-            if (text && !replay) this.note(`📨 <b>Вы:</b> ${esc(truncate(text, 600))}`);
+            if (text) this.note(`📨 <b>Вы:</b> ${esc(truncate(text, 600))}`);
           }
           break;
         }

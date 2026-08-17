@@ -38,8 +38,17 @@ const cb = {
 };
 bot.cb = cb;
 
+// rpcIds of prompts this bot sent (steer/new task). Their user/message echo
+// is skipped in the mirror — the user already sees those messages natively.
+const botPromptIds = new Set();
+function rememberPrompt(rpcId) {
+  if (botPromptIds.size > 2000) botPromptIds.clear();
+  if (rpcId) botPromptIds.add(rpcId);
+}
+
 const manager = new StreamManager(bot, dsh, {
   store,
+  botPromptIds,
   streamIntervalMs: cfg.streamIntervalMs,
   maxMessageChars: cfg.maxMessageChars,
 });
@@ -187,7 +196,8 @@ async function createTask(chatId, cwd, text) {
   }
   try {
     const { sessionId } = await dsh.createSession({ cwd });
-    await dsh.prompt(sessionId, text, "queue");
+    const { rpcId } = await dsh.prompt(sessionId, text, "queue");
+    rememberPrompt(rpcId);
     store.setWatched(chatId, sessionId);
     manager.attach(chatId, sessionId);
     await bot.telegram
@@ -208,10 +218,8 @@ async function steer(chatId, text) {
     return false;
   }
   try {
-    await dsh.prompt(sid, `[Корректировка] ${text}`, "steer");
-    await bot.telegram
-      .sendMessage(chatId, `📝 <b>Корректировка отправлена</b> — продолжаю с учётом:\n\n${esc(truncate(text, 500))}`)
-      .catch(() => {});
+    const { rpcId } = await dsh.prompt(sid, `[Корректировка] ${text}`, "steer");
+    rememberPrompt(rpcId);
     return true;
   } catch (err) {
     await bot.telegram.sendMessage(chatId, `❌ ${esc(err.message)}`).catch(() => {});
