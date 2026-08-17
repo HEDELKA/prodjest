@@ -122,10 +122,11 @@ export class StreamManager {
 
   controlKeyboard() {
     const { Markup } = this.bot;
+    // Direct-encoded callback data: works even after the bot restarts.
     return Markup.inlineKeyboard([
-      Markup.button.callback("⏹ Стоп", "cb:" + this.bot.cb.set({ kind: "stop" })),
-      Markup.button.callback("🔇 Пауза", "cb:" + this.bot.cb.set({ kind: "mute" })),
-      Markup.button.callback("👁 Отписаться", "cb:" + this.bot.cb.set({ kind: "unwatch" })),
+      Markup.button.callback("⏹ Стоп", "cb:st"),
+      Markup.button.callback("🔇 Пауза", "cb:mu"),
+      Markup.button.callback("👁 Отписаться", "cb:uw"),
     ]);
   }
 

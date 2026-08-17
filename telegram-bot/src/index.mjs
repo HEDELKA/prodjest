@@ -75,7 +75,7 @@ function mainMenu() {
       Markup.button.callback("➕ Новая задача", "cb:" + cb.set({ kind: "new" })),
     ],
     [
-      Markup.button.callback("⏹ Стоп", "cb:" + cb.set({ kind: "stop" })),
+      Markup.button.callback("⏹ Стоп", "cb:st"),
       Markup.button.callback("📝 Корректировка", "cb:" + cb.set({ kind: "steer" })),
     ],
     [Markup.button.callback("✋ Помощь", "cb:" + cb.set({ kind: "help" }))],
@@ -135,7 +135,7 @@ async function replyProjectSessions(ctx, chatId, cwd, { editMsgId } = {}) {
     return [
       Markup.button.callback(
         `💬 ${truncate(label, 44)} · ${statusBadge(s)}`,
-        "cb:" + cb.set({ kind: "watch", sessionId: s.sessionId })
+        `cb:w:${s.sessionId}` // direct-encoded: survives bot restarts
       ),
     ];
   });
@@ -321,8 +321,48 @@ bot.emitQuestion = (chatId, frame) => {
 bot.action(/^cb:/, async (ctx) => {
   const chatId = ctx.chat?.id;
   if (!allowed(ctx)) return deny(ctx);
-  const payload = cb.get(String(ctx.callbackQuery.data).slice(3));
-  if (!payload) return ctx.answerCallbackQuery("устарело").catch(() => {});
+  const raw = String(ctx.callbackQuery.data);
+
+  // Direct-encoded callbacks (survive bot restarts — no in-memory token).
+  if (raw.startsWith("cb:w:")) {
+    const sessionId = raw.slice(5);
+    try {
+      store.setWatched(chatId, sessionId);
+      manager.attach(chatId, sessionId);
+      await ctx.answerCbQuery().catch(() => {});
+    } catch (err) {
+      console.log("[tg] watch error:", err.message);
+    }
+    return;
+  }
+  if (raw === "cb:st") {
+    await doStop(chatId, { editMsgId: ctx.callbackQuery.message?.message_id });
+    await ctx.answerCbQuery().catch(() => {});
+    return;
+  }
+  if (raw === "cb:mu") {
+    const sid = store.watched(chatId);
+    if (sid) {
+      const st = manager.streams.get(manager.key(chatId, sid));
+      if (st) {
+        st.muted = !st.muted;
+        store.setMuted(chatId, st.muted);
+      }
+    }
+    await ctx.answerCbQuery().catch(() => {});
+    return;
+  }
+  if (raw === "cb:uw") {
+    const sid = store.watched(chatId);
+    if (sid) manager.detach(chatId, sid);
+    store.setWatched(chatId, null);
+    await bot.telegram.editMessageText(chatId, ctx.callbackQuery.message?.message_id, undefined, "👁 Отписался от задачи.").catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
+    return;
+  }
+
+  const payload = cb.get(raw.slice(3));
+  if (!payload) return ctx.answerCbQuery("⏳ Кнопка устарела (бот перезапускался) — нажмите /tasks заново", true).catch(() => {});
   try {
     switch (payload.kind) {
       case "tasks":
@@ -331,11 +371,6 @@ bot.action(/^cb:/, async (ctx) => {
       case "proj":
         await replyProjectSessions(ctx, chatId, payload.cwd);
         break;
-      case "watch": {
-        store.setWatched(chatId, payload.sessionId);
-        manager.attach(chatId, payload.sessionId);
-        break;
-      }
       case "new":
         await newTaskFlow(chatId);
         break;
@@ -353,28 +388,9 @@ bot.action(/^cb:/, async (ctx) => {
         await bot.telegram.sendMessage(chatId, "Напишите корректировку текстом или голосом:").catch(() => {});
         pendingInputs.set(chatId, { type: "steer" });
         break;
-      case "mute": {
-        const sid = store.watched(chatId);
-        if (sid) {
-          const st = manager.streams.get(manager.key(chatId, sid));
-          if (st) {
-            st.muted = !st.muted;
-            store.setMuted(chatId, st.muted);
-            await ctx.answerCallbackQuery(st.muted ? "🔇 Трансляция приостановлена" : "🔊 Трансляция возобновлена").catch(() => {});
-          }
-        }
-        break;
-      }
-      case "unwatch": {
-        const sid = store.watched(chatId);
-        if (sid) manager.detach(chatId, sid);
-        store.setWatched(chatId, null);
-        await bot.telegram.editMessageText(chatId, ctx.callbackQuery.message?.message_id, undefined, "👁 Отписался от задачи.").catch(() => {});
-        break;
-      }
       case "qopt": {
         const flow = questionFlows.get(flowKey(chatId, payload.rpcId));
-        if (!flow) return ctx.answerCallbackQuery("устарело").catch(() => {});
+        if (!flow) return ctx.answerCbQuery("устарело").catch(() => {});
         const q = flow.questions[flow.index];
         const ans = flow.answers[flow.index];
         if (q.multiSelect) {
@@ -389,20 +405,20 @@ bot.action(/^cb:/, async (ctx) => {
       }
       case "qsubmit": {
         const flow = questionFlows.get(flowKey(chatId, payload.rpcId));
-        if (!flow) return ctx.answerCallbackQuery("устарело").catch(() => {});
+        if (!flow) return ctx.answerCbQuery("устарело").catch(() => {});
         submitQuestion(chatId, flow);
         break;
       }
       case "qcustom": {
         const flow = questionFlows.get(flowKey(chatId, payload.rpcId));
-        if (!flow) return ctx.answerCallbackQuery("устарело").catch(() => {});
-        await ctx.answerCallbackQuery("Введите ответ текстом").catch(() => {});
+        if (!flow) return ctx.answerCbQuery("устарело").catch(() => {});
+        await ctx.answerCbQuery("Введите ответ текстом").catch(() => {});
         pendingInputs.set(chatId, { type: "question", rpcId: flow.rpcId });
         break;
       }
       case "qcancel": {
         const flow = questionFlows.get(flowKey(chatId, payload.rpcId));
-        if (!flow) return ctx.answerCallbackQuery("устарело").catch(() => {});
+        if (!flow) return ctx.answerCbQuery("устарело").catch(() => {});
         questionFlows.delete(flowKey(chatId, payload.rpcId));
         await dsh
           .respond(flow.rpcId, { ok: false, error: { code: "cancelled", message: "cancelled by user via Telegram", details: {} } })
@@ -416,7 +432,7 @@ bot.action(/^cb:/, async (ctx) => {
           ok: true,
           value: { approvalId: payload.approvalId, sessionId: payload.sessionId, outcome },
         });
-        await ctx.answerCallbackQuery(payload.allow ? "✅ Разрешено" : "❌ Отклонено").catch(() => {});
+        await ctx.answerCbQuery(payload.allow ? "✅ Разрешено" : "❌ Отклонено").catch(() => {});
         await bot.telegram
           .editMessageText(chatId, ctx.callbackQuery.message?.message_id, undefined, `🔔 <b>Запрос разрешения</b>\n<i>${payload.allow ? "✅ Разрешено (отправлено)" : "❌ Отклонено (отправлено)"}</i>`, {
             parse_mode: "HTML",
@@ -438,11 +454,11 @@ bot.action(/^cb:/, async (ctx) => {
   } catch (err) {
     console.log("[tg] callback error:", err.message);
     try {
-      await ctx.answerCallbackQuery("ошибка: " + truncate(err.message, 50)).catch(() => {});
+      await ctx.answerCbQuery("ошибка: " + truncate(err.message, 50)).catch(() => {});
     } catch {}
   }
   try {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
   } catch {}
 });
 
