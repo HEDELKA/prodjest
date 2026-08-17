@@ -729,6 +729,31 @@ async function main() {
     console.warn("[warn] модель whisper не найдена:", cfg.whisperModel);
   }
 
+  // Register the bot's command menu (the "/" list in Telegram).
+  const COMMANDS = [
+    { command: "start", description: "Главное меню" },
+    { command: "tasks", description: "Список проектов и задач" },
+    { command: "watch", description: "Наблюдать за задачей" },
+    { command: "new", description: "Новая задача" },
+    { command: "stop", description: "Остановить задачу" },
+    { command: "steer", description: "Корректировка текстом" },
+    { command: "mute", description: "Пауза трансляции" },
+    { command: "unmute", description: "Возобновить трансляцию" },
+    { command: "status", description: "Статус задач" },
+    { command: "unwatch", description: "Отписаться от задачи" },
+    { command: "help", description: "Помощь" },
+  ];
+  try {
+    await bot.telegram.setMyCommands(COMMANDS);
+    await bot.telegram.setMyDescription(
+      "Пульт управления задачами DeepSeek Harness: реалтайм-стриминг вывода агента, остановка, корректировки текстом и голосом (локальный Whisper)."
+    );
+    await bot.telegram.setMyShortDescription("Пульт задач DeepSeek Harness");
+    console.log("[tg] команды зарегистрированы:", COMMANDS.length);
+  } catch (err) {
+    console.warn("[tg] setMyCommands не удалось:", err.message);
+  }
+
   // sanity: DSH host reachable
   try {
     await dsh.listSessions();
